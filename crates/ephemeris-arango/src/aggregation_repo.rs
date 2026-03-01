@@ -293,10 +293,10 @@ mod tests {
         let client = reqwest::Client::new();
         for _ in 0..60 {
             let result = client.get(format!("{base_url}/_api/version")).send().await;
-            if let Ok(resp) = result {
-                if resp.status().is_success() {
-                    break;
-                }
+            if let Ok(resp) = result
+                && resp.status().is_success()
+            {
+                break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
