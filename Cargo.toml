@@ -4,6 +4,8 @@ members = [
     "crates/ephemeris-core",
     "crates/ephemeris-pg",
     "crates/ephemeris-mqtt",
+    "crates/ephemeris-api",
+    "crates/ephemeris-arango",
 ]
 
 [workspace.package]
