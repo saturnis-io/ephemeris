@@ -733,9 +733,13 @@ dependencies = [
  "ephemeris-mqtt",
  "ephemeris-pg",
  "serde",
+ "serde_json",
+ "testcontainers",
+ "testcontainers-modules",
  "tokio",
  "tokio-postgres",
  "toml 0.8.23",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]
