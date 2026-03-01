@@ -12,7 +12,11 @@ use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialN
 use crate::state::AppState;
 
 /// GET /events — query events with optional filters.
-pub async fn query_events<E: EventRepository, A: AggregationRepository, S: SerialNumberRepository>(
+pub async fn query_events<
+    E: EventRepository,
+    A: AggregationRepository,
+    S: SerialNumberRepository,
+>(
     State(state): State<Arc<AppState<E, A, S>>>,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<Vec<EpcisEvent>>, (StatusCode, Json<Value>)> {
@@ -53,7 +57,11 @@ pub async fn get_event<E: EventRepository, A: AggregationRepository, S: SerialNu
 }
 
 /// POST /events — capture a new EPCIS event.
-pub async fn capture_event<E: EventRepository, A: AggregationRepository, S: SerialNumberRepository>(
+pub async fn capture_event<
+    E: EventRepository,
+    A: AggregationRepository,
+    S: SerialNumberRepository,
+>(
     State(state): State<Arc<AppState<E, A, S>>>,
     Json(event): Json<EpcisEvent>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {

@@ -16,8 +16,9 @@ use tower::ServiceExt;
 use ephemeris_api::{AppState, create_router};
 use ephemeris_core::domain::{EpcisEvent, EventQuery};
 use ephemeris_core::repository::{AggregationRepository, EventRepository};
+use ephemeris_core::service::SerialNumberService;
 use ephemeris_mqtt::EventHandler;
-use ephemeris_pg::{PgAggregationRepository, PgEventRepository};
+use ephemeris_pg::{PgAggregationRepository, PgEventRepository, PgSerialNumberRepository};
 
 use deadpool_postgres::{Config, ManagerConfig, RecyclingMethod, Runtime};
 use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
@@ -26,6 +27,7 @@ use tokio_postgres::NoTls;
 async fn setup() -> (
     PgEventRepository,
     PgAggregationRepository,
+    PgSerialNumberRepository,
     impl std::any::Any, // container handle
 ) {
     let container = Postgres::default().start().await.unwrap();
@@ -49,17 +51,19 @@ async fn setup() -> (
         recycling_method: RecyclingMethod::Fast,
     });
     let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap();
-    let agg_repo = PgAggregationRepository::new(pool);
+    let agg_repo = PgAggregationRepository::new(pool.clone());
+    let sn_repo = PgSerialNumberRepository::new(pool);
 
-    (event_repo, agg_repo, container)
+    (event_repo, agg_repo, sn_repo, container)
 }
 
 #[tokio::test]
 async fn e2e_object_event_ingest_and_query() {
-    let (event_repo, agg_repo, _container) = setup().await;
+    let (event_repo, agg_repo, sn_repo, _container) = setup().await;
 
     // 1. Ingest an ObjectEvent through the handler (same path as MQTT)
-    let handler = EventHandler::new(event_repo.clone(), agg_repo.clone());
+    let sn_service = SerialNumberService::new(sn_repo.clone());
+    let handler = EventHandler::new(event_repo.clone(), agg_repo.clone(), sn_service);
 
     let object_event: EpcisEvent = serde_json::from_str(
         r#"{
@@ -87,6 +91,7 @@ async fn e2e_object_event_ingest_and_query() {
     let state = Arc::new(AppState {
         event_repo: event_repo.clone(),
         agg_repo: agg_repo.clone(),
+        sn_service: SerialNumberService::new(sn_repo.clone()),
     });
     let app = create_router(state);
 
@@ -111,9 +116,10 @@ async fn e2e_object_event_ingest_and_query() {
 
 #[tokio::test]
 async fn e2e_aggregation_hierarchy_ingest_and_query() {
-    let (event_repo, agg_repo, _container) = setup().await;
+    let (event_repo, agg_repo, sn_repo, _container) = setup().await;
 
-    let handler = EventHandler::new(event_repo.clone(), agg_repo.clone());
+    let sn_service = SerialNumberService::new(sn_repo.clone());
+    let handler = EventHandler::new(event_repo.clone(), agg_repo.clone(), sn_service);
 
     // 1. Ingest AggregationEvent: pallet contains 2 cases
     let agg_event: EpcisEvent = serde_json::from_str(
@@ -176,6 +182,7 @@ async fn e2e_aggregation_hierarchy_ingest_and_query() {
     let state = Arc::new(AppState {
         event_repo: event_repo.clone(),
         agg_repo: agg_repo.clone(),
+        sn_service: SerialNumberService::new(sn_repo),
     });
     let app = create_router(state.clone());
 
@@ -259,11 +266,12 @@ async fn e2e_aggregation_hierarchy_ingest_and_query() {
 
 #[tokio::test]
 async fn e2e_event_capture_via_api() {
-    let (event_repo, agg_repo, _container) = setup().await;
+    let (event_repo, agg_repo, sn_repo, _container) = setup().await;
 
     let state = Arc::new(AppState {
         event_repo: event_repo.clone(),
         agg_repo: agg_repo.clone(),
+        sn_service: SerialNumberService::new(sn_repo),
     });
     let app = create_router(state.clone());
 

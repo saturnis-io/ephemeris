@@ -70,12 +70,7 @@ where
             for epc in epcs {
                 if let Err(e) = self
                     .sn_service
-                    .process_transition(
-                        &epc,
-                        biz_step,
-                        Some(&stored_id),
-                        TransitionSource::Mqtt,
-                    )
+                    .process_transition(&epc, biz_step, Some(&stored_id), TransitionSource::Mqtt)
                     .await
                 {
                     tracing::warn!(epc = %epc, error = %e, "failed to update SN state");
@@ -89,20 +84,17 @@ where
     /// Extract all EPCs from an event for SN state tracking.
     fn extract_epcs(event: &EpcisEvent) -> Vec<Epc> {
         match event {
-            EpcisEvent::ObjectEvent(data) => {
-                data.epc_list.iter().map(|s| Epc::new(s)).collect()
-            }
+            EpcisEvent::ObjectEvent(data) => data.epc_list.iter().map(Epc::new).collect(),
             EpcisEvent::AggregationEvent(data) => {
-                let mut epcs: Vec<Epc> = data.child_epcs.iter().map(|s| Epc::new(s)).collect();
+                let mut epcs: Vec<Epc> = data.child_epcs.iter().map(Epc::new).collect();
                 if let Some(ref parent) = data.parent_id {
                     epcs.push(Epc::new(parent));
                 }
                 epcs
             }
             EpcisEvent::TransformationEvent(data) => {
-                let mut epcs: Vec<Epc> =
-                    data.input_epc_list.iter().map(|s| Epc::new(s)).collect();
-                epcs.extend(data.output_epc_list.iter().map(|s| Epc::new(s)));
+                let mut epcs: Vec<Epc> = data.input_epc_list.iter().map(Epc::new).collect();
+                epcs.extend(data.output_epc_list.iter().map(Epc::new));
                 epcs
             }
         }
@@ -193,7 +185,11 @@ mod tests {
             Ok(())
         }
 
-        async fn get_history(&self, _epc: &Epc, _limit: u32) -> Result<Vec<SnTransition>, RepoError> {
+        async fn get_history(
+            &self,
+            _epc: &Epc,
+            _limit: u32,
+        ) -> Result<Vec<SnTransition>, RepoError> {
             Ok(self.transitions.lock().unwrap().clone())
         }
     }

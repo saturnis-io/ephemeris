@@ -1,6 +1,6 @@
 use crate::domain::{
-    biz_step_to_target_state, is_valid_transition, Epc, EventId, SerialNumber, SerialNumberQuery,
-    SnState, SnTransition, TransitionSource,
+    Epc, EventId, SerialNumber, SerialNumberQuery, SnState, SnTransition, TransitionSource,
+    biz_step_to_target_state, is_valid_transition,
 };
 use crate::error::RepoError;
 use crate::repository::SerialNumberRepository;
@@ -82,7 +82,9 @@ impl<S: SerialNumberRepository> SerialNumberService<S> {
             .map(|sn| sn.state)
             .unwrap_or(SnState::Unassigned);
 
-        self.repo.upsert_state(epc, target_state, None, None).await?;
+        self.repo
+            .upsert_state(epc, target_state, None, None)
+            .await?;
 
         let transition = SnTransition {
             epc: epc.clone(),
@@ -104,11 +106,7 @@ impl<S: SerialNumberRepository> SerialNumberService<S> {
     }
 
     /// Get transition history.
-    pub async fn get_history(
-        &self,
-        epc: &Epc,
-        limit: u32,
-    ) -> Result<Vec<SnTransition>, RepoError> {
+    pub async fn get_history(&self, epc: &Epc, limit: u32) -> Result<Vec<SnTransition>, RepoError> {
         self.repo.get_history(epc, limit).await
     }
 
@@ -181,7 +179,11 @@ mod tests {
             Ok(())
         }
 
-        async fn get_history(&self, _epc: &Epc, _limit: u32) -> Result<Vec<SnTransition>, RepoError> {
+        async fn get_history(
+            &self,
+            _epc: &Epc,
+            _limit: u32,
+        ) -> Result<Vec<SnTransition>, RepoError> {
             Ok(self.transitions.lock().unwrap().clone())
         }
     }

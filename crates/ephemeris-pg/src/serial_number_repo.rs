@@ -71,8 +71,7 @@ impl SerialNumberRepository for PgSerialNumberRepository {
                 let state_str: String = row.get(1);
                 Ok(Some(SerialNumber {
                     epc: Epc::new(row.get::<_, &str>(0)),
-                    state: SnState::from_str(&state_str)
-                        .map_err(RepoError::Serialization)?,
+                    state: SnState::from_str(&state_str).map_err(RepoError::Serialization)?,
                     sid_class: row.get(2),
                     pool_id: row.get(3),
                     created_at: row.get(4),
@@ -134,8 +133,7 @@ impl SerialNumberRepository for PgSerialNumberRepository {
                 let state_str: String = row.get(1);
                 Ok(SerialNumber {
                     epc: Epc::new(row.get::<_, &str>(0)),
-                    state: SnState::from_str(&state_str)
-                        .map_err(RepoError::Serialization)?,
+                    state: SnState::from_str(&state_str).map_err(RepoError::Serialization)?,
                     sid_class: row.get(2),
                     pool_id: row.get(3),
                     created_at: row.get(4),
@@ -179,11 +177,7 @@ impl SerialNumberRepository for PgSerialNumberRepository {
         Ok(())
     }
 
-    async fn get_history(
-        &self,
-        epc: &Epc,
-        limit: u32,
-    ) -> Result<Vec<SnTransition>, RepoError> {
+    async fn get_history(&self, epc: &Epc, limit: u32) -> Result<Vec<SnTransition>, RepoError> {
         let client = self
             .pool
             .get()
@@ -207,10 +201,8 @@ impl SerialNumberRepository for PgSerialNumberRepository {
                 let source_str: String = row.get(5);
                 Ok(SnTransition {
                     epc: Epc::new(row.get::<_, &str>(0)),
-                    from_state: SnState::from_str(&from_str)
-                        .map_err(RepoError::Serialization)?,
-                    to_state: SnState::from_str(&to_str)
-                        .map_err(RepoError::Serialization)?,
+                    from_state: SnState::from_str(&from_str).map_err(RepoError::Serialization)?,
+                    to_state: SnState::from_str(&to_str).map_err(RepoError::Serialization)?,
                     biz_step: row.get(3),
                     event_id: row.get::<_, Option<uuid::Uuid>>(4).map(EventId),
                     source: match source_str.as_str() {

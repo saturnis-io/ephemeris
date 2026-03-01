@@ -137,10 +137,7 @@ mod tests {
             Ok(None)
         }
 
-        async fn query(
-            &self,
-            _query: &SerialNumberQuery,
-        ) -> Result<Vec<SerialNumber>, RepoError> {
+        async fn query(&self, _query: &SerialNumberQuery) -> Result<Vec<SerialNumber>, RepoError> {
             Ok(vec![])
         }
 
