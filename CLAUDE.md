@@ -21,6 +21,19 @@ These rules protect Saturnis from viral open-source license contamination. Viola
 
 6. **BYOD (Bring Your Own Database).** Saturnis provides the pipeline; customers provision and license enterprise databases (ArangoDB, CouchDB). Documentation must always reflect this — never instruct users to "install ArangoDB" as part of the Ephemeris install. It's a separate, customer-managed infrastructure decision.
 
+## OPEN-SCS Alignment
+
+Ephemeris development aligns with the **OPEN-SCS Packaging Serialization Specification (PSS) Version 1** (OPC Foundation, 2019). The spec lives in `.internal/OPEN-SCS-Specification-FINAL.pdf` and `.internal/OPEN-SCS-Use-Cases-FINAL.pdf`. The full analysis is in `docs/open-scs-alignment.md`.
+
+**Key principles:**
+
+- OPEN-SCS covers pre-commissioning (SN birth → label printing → commissioning). EPCIS 2.0 covers post-commissioning (commissioning → supply chain). Ephemeris must handle both.
+- Ephemeris operates as an **SSM (Site Serialization Manager)** at ISA-95 Level 3 — receiving SN allocations from enterprise (ESM/Level 4) and line events from packaging lines (LSM/Level 2) via MQTT.
+- The OPEN-SCS serial number state machine (12 states, 17 transitions) is the authoritative model for serial number lifecycle management.
+- OPEN-SCS uses `http://open-scs.org/bizstep/*` and `http://open-scs.org/disp/*` URIs for pre-commissioning events. Post-commissioning events use `urn:epcglobal:cbv:bizstep:*` (GS1). Both URI namespaces must be supported.
+- Serial Number Pool management (request/return/allocate) is a first-class concept — not an afterthought.
+- Collection-based operations (batch SN handling) are the norm, not individual operations.
+
 ## Architecture Quick Reference
 
 - **Workspace:** Cargo workspace with multiple crates in `crates/`
