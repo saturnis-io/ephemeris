@@ -5,6 +5,7 @@ use ephemeris_core::domain::{AggregationNode, AggregationTree, Epc, EventId};
 use ephemeris_core::error::RepoError;
 use ephemeris_core::repository::AggregationRepository;
 
+#[derive(Clone)]
 pub struct PgAggregationRepository {
     pool: Pool,
 }

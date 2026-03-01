@@ -18,6 +18,7 @@ pub enum ArangoError {
 /// HTTP client wrapper for ArangoDB REST API.
 ///
 /// All communication goes over HTTP — no embedded database engine.
+#[derive(Clone)]
 pub struct ArangoClient {
     client: Client,
     base_url: String,

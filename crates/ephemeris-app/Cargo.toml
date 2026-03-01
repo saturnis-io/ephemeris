@@ -1,0 +1,32 @@
+[package]
+name = "ephemeris-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ephemeris"
+path = "src/main.rs"
+
+[features]
+default = []
+enterprise-arango = ["dep:ephemeris-arango"]
+enterprise = ["enterprise-arango"]
+
+[dependencies]
+ephemeris-core = { path = "../ephemeris-core" }
+ephemeris-pg = { path = "../ephemeris-pg" }
+ephemeris-mqtt = { path = "../ephemeris-mqtt" }
+ephemeris-api = { path = "../ephemeris-api" }
+ephemeris-arango = { path = "../ephemeris-arango", optional = true }
+
+tokio = { workspace = true }
+tokio-postgres = { workspace = true }
+deadpool-postgres = { workspace = true }
+axum = { workspace = true }
+config = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+toml = { workspace = true }

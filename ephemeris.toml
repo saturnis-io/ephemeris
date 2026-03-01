@@ -1,0 +1,26 @@
+# Ephemeris Configuration
+# Override any value via environment variables: EPHEMERIS_MQTT__BROKER_URL
+# Or CLI flags: --database-backend postgres
+
+[mqtt]
+broker_url = "mqtt://localhost:1883"
+client_id = "ephemeris-site-01"
+topics = ["plant/+/events/#"]
+qos = 1
+
+[database]
+backend = "postgres"
+
+[database.postgres]
+url = "postgresql://ephemeris:ephemeris@localhost:5432/ephemeris"
+pool_size = 10
+
+# Enterprise connectors (requires enterprise build)
+# [database.arango]
+# url = "http://localhost:8529"
+# database = "ephemeris"
+# username = "root"
+# password = ""
+
+[api]
+bind = "0.0.0.0:8080"

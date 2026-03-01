@@ -9,6 +9,7 @@ use crate::client::ArangoClient;
 ///
 /// Uses the ArangoDB graph API (HTTP REST) to manage parent-child packaging
 /// relationships. Vertices live in the `packaging` collection and edges in `contains`.
+#[derive(Clone)]
 pub struct ArangoAggregationRepository {
     client: ArangoClient,
     graph_name: String,

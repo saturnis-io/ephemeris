@@ -11,7 +11,7 @@ use tower_http::trace::TraceLayer;
 use ephemeris_core::repository::{AggregationRepository, EventRepository};
 
 use crate::routes::{events, health, hierarchy};
-use crate::state::AppState;
+pub use crate::state::AppState;
 
 /// Build the Axum router with all API routes.
 ///

@@ -2,37 +2,37 @@
 
 ## Kanban Status
 
-### Backlog
-- US8: ArangoDB connector
-- US9: MQTT ingestion
-- US10: REST API
-- US12: Test kit
-- US13: E2E pipeline test
-- US14: CI workflow
-- US15: Final validation
-
-### Blocked (waiting on dependencies)
-- US2: Core domain types (blocked by US1)
-- US3: Core error types (blocked by US1)
-- US4: Repository traits (blocked by US2, US3)
-- US5: PG crate scaffold (blocked by US4)
-- US6: PgEventRepository (blocked by US5)
-- US7: PgAggregationRepository (blocked by US5)
-- US11: App wiring (blocked by US6, US9, US10)
+### Done
+- US1: Scaffold workspace
+- US2: Core domain types (EPCIS 2.0)
+- US3: Core error types
+- US4: Core repository traits
+- US5: PG crate scaffold + schema
+- US6: PgEventRepository (4 integration tests)
+- US7: PgAggregationRepository with ltree (4 integration tests)
+- US8: ArangoDB connector (3 integration tests)
+- US9: MQTT ingestion (3 unit tests)
+- US10: REST API (1 unit test)
+- US12: Test kit + dashboard UI (5 tests)
 
 ### In Progress
-- US1: Scaffold workspace (foundation-agent)
+- US11: App wiring + config (ephemeris-app)
 
-### Done
-_(none yet)_
+### Blocked (waiting on dependencies)
+- US13: E2E pipeline test (blocked by US11)
+- US14: CI workflow (blocked by US11)
+- US15: Final validation (blocked by US13, US14)
 
 ## Wave Plan
 
-- **Wave 1**: US1 (foundation)
-- **Wave 2**: US2 + US3 (parallel — domain types + errors)
-- **Wave 3**: US4 (traits — needs US2+US3)
-- **Wave 4**: US5 + US8 + US9 + US10 (parallel — PG scaffold, ArangoDB, MQTT, API)
-- **Wave 5**: US6 + US7 (PG implementations)
-- **Wave 6**: US11 + US12 (app wiring + testkit)
+- **Wave 1**: US1 (foundation) — DONE
+- **Wave 2**: US2 + US3 (parallel — domain types + errors) — DONE
+- **Wave 3**: US4 (traits — needs US2+US3) — DONE
+- **Wave 4**: US5 + US8 + US9 + US10 (parallel — PG scaffold, ArangoDB, MQTT, API) — DONE
+- **Wave 5**: US6 + US7 (PG implementations) — DONE
+- **Wave 6**: US11 + US12 (app wiring + testkit) — US12 DONE, US11 IN PROGRESS
 - **Wave 7**: US13 + US14 (E2E + CI)
 - **Wave 8**: US15 (final validation)
+
+## Summary
+11/15 user stories complete. Critical path: US11 → US13+US14 → US15

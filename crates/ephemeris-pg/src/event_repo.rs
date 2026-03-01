@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::schema::INIT_SCHEMA;
 
+#[derive(Clone)]
 pub struct PgEventRepository {
     pool: Pool,
 }
