@@ -1,35 +1,42 @@
-use ephemeris_core::domain::{Action, Epc, EpcisEvent};
+use ephemeris_core::domain::{Action, Epc, EpcisEvent, TransitionSource};
 use ephemeris_core::error::RepoError;
-use ephemeris_core::repository::{AggregationRepository, EventRepository};
+use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
+use ephemeris_core::service::SerialNumberService;
 
 /// Handles incoming EPCIS events by routing them to the appropriate repositories.
 ///
-/// Stores every event via the event repository, and for aggregation events
-/// with a parent_id, updates the aggregation hierarchy accordingly.
-pub struct EventHandler<E, A> {
+/// Stores every event via the event repository, updates aggregation hierarchy
+/// for aggregation events, and drives serial number state transitions based
+/// on the event's bizStep.
+pub struct EventHandler<E, A, S: SerialNumberRepository> {
     event_repo: E,
     agg_repo: A,
+    sn_service: SerialNumberService<S>,
 }
 
-impl<E, A> EventHandler<E, A>
+impl<E, A, S> EventHandler<E, A, S>
 where
     E: EventRepository + 'static,
     A: AggregationRepository + 'static,
+    S: SerialNumberRepository + 'static,
 {
-    pub fn new(event_repo: E, agg_repo: A) -> Self {
+    pub fn new(event_repo: E, agg_repo: A, sn_service: SerialNumberService<S>) -> Self {
         Self {
             event_repo,
             agg_repo,
+            sn_service,
         }
     }
 
     /// Handle an incoming EPCIS event.
     ///
-    /// Stores the event and, for aggregation events with a parent_id,
-    /// updates child relationships based on the action type.
+    /// 1. Stores the event
+    /// 2. Routes aggregation events to the hierarchy repo
+    /// 3. Drives SN state transitions based on bizStep
     pub async fn handle_event(&self, event: &EpcisEvent) -> Result<(), RepoError> {
         let stored_id = self.event_repo.store_event(event).await?;
 
+        // Route aggregation events
         if let EpcisEvent::AggregationEvent(data) = event
             && let Some(ref parent_id_str) = data.parent_id
         {
@@ -51,7 +58,54 @@ where
             }
         }
 
+        // Drive SN state transitions from bizStep
+        let biz_step = match event {
+            EpcisEvent::ObjectEvent(data) => data.common.biz_step.as_deref(),
+            EpcisEvent::AggregationEvent(data) => data.common.biz_step.as_deref(),
+            EpcisEvent::TransformationEvent(data) => data.common.biz_step.as_deref(),
+        };
+
+        if let Some(biz_step) = biz_step {
+            let epcs = Self::extract_epcs(event);
+            for epc in epcs {
+                if let Err(e) = self
+                    .sn_service
+                    .process_transition(
+                        &epc,
+                        biz_step,
+                        Some(&stored_id),
+                        TransitionSource::Mqtt,
+                    )
+                    .await
+                {
+                    tracing::warn!(epc = %epc, error = %e, "failed to update SN state");
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    /// Extract all EPCs from an event for SN state tracking.
+    fn extract_epcs(event: &EpcisEvent) -> Vec<Epc> {
+        match event {
+            EpcisEvent::ObjectEvent(data) => {
+                data.epc_list.iter().map(|s| Epc::new(s)).collect()
+            }
+            EpcisEvent::AggregationEvent(data) => {
+                let mut epcs: Vec<Epc> = data.child_epcs.iter().map(|s| Epc::new(s)).collect();
+                if let Some(ref parent) = data.parent_id {
+                    epcs.push(Epc::new(parent));
+                }
+                epcs
+            }
+            EpcisEvent::TransformationEvent(data) => {
+                let mut epcs: Vec<Epc> =
+                    data.input_epc_list.iter().map(|s| Epc::new(s)).collect();
+                epcs.extend(data.output_epc_list.iter().map(|s| Epc::new(s)));
+                epcs
+            }
+        }
     }
 }
 
@@ -60,8 +114,10 @@ mod tests {
     use super::*;
     use ephemeris_core::domain::{
         AggregationEventData, AggregationTree, CommonEventFields, EventId, ObjectEventData,
+        SerialNumber, SerialNumberQuery, SnState, SnTransition,
     };
     use mockall::mock;
+    use std::sync::Mutex;
 
     mock! {
         pub EventRepo {}
@@ -100,6 +156,48 @@ mod tests {
         }
     }
 
+    /// In-memory stub for SerialNumberRepository (avoids mockall lifetime issues with Option<&str>).
+    struct StubSnRepo {
+        transitions: Mutex<Vec<SnTransition>>,
+    }
+
+    impl StubSnRepo {
+        fn new() -> Self {
+            Self {
+                transitions: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl SerialNumberRepository for StubSnRepo {
+        async fn upsert_state(
+            &self,
+            _epc: &Epc,
+            _state: SnState,
+            _sid_class: Option<&str>,
+            _pool_id: Option<&str>,
+        ) -> Result<(), RepoError> {
+            Ok(())
+        }
+
+        async fn get_state(&self, _epc: &Epc) -> Result<Option<SerialNumber>, RepoError> {
+            Ok(None)
+        }
+
+        async fn query(&self, _query: &SerialNumberQuery) -> Result<Vec<SerialNumber>, RepoError> {
+            Ok(vec![])
+        }
+
+        async fn record_transition(&self, transition: &SnTransition) -> Result<(), RepoError> {
+            self.transitions.lock().unwrap().push(transition.clone());
+            Ok(())
+        }
+
+        async fn get_history(&self, _epc: &Epc, _limit: u32) -> Result<Vec<SnTransition>, RepoError> {
+            Ok(self.transitions.lock().unwrap().clone())
+        }
+    }
+
     fn make_common() -> CommonEventFields {
         use chrono::FixedOffset;
         CommonEventFields {
@@ -120,7 +218,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_object_event() {
+    async fn test_handle_object_event_no_bizstep() {
         let mut mock_event = MockEventRepo::new();
         let mock_agg = MockAggRepo::new();
 
@@ -129,9 +227,8 @@ mod tests {
             .times(1)
             .returning(|_| Ok(EventId::new()));
 
-        // No aggregation calls expected for object events
-
-        let handler = EventHandler::new(mock_event, mock_agg);
+        let sn_service = SerialNumberService::new(StubSnRepo::new());
+        let handler = EventHandler::new(mock_event, mock_agg, sn_service);
         let event = EpcisEvent::ObjectEvent(ObjectEventData {
             common: make_common(),
             action: Action::Observe,
@@ -139,8 +236,33 @@ mod tests {
             quantity_list: vec![],
         });
 
-        let result = handler.handle_event(&event).await;
-        assert!(result.is_ok());
+        assert!(handler.handle_event(&event).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_object_event_with_commissioning() {
+        let mut mock_event = MockEventRepo::new();
+        let mock_agg = MockAggRepo::new();
+
+        mock_event
+            .expect_store_event()
+            .times(1)
+            .returning(|_| Ok(EventId::new()));
+
+        let sn_service = SerialNumberService::new(StubSnRepo::new());
+        let handler = EventHandler::new(mock_event, mock_agg, sn_service);
+
+        let mut common = make_common();
+        common.biz_step = Some("commissioning".to_string());
+
+        let event = EpcisEvent::ObjectEvent(ObjectEventData {
+            common,
+            action: Action::Observe,
+            epc_list: vec!["urn:epc:id:sgtin:0614141.107346.2017".to_string()],
+            quantity_list: vec![],
+        });
+
+        assert!(handler.handle_event(&event).await.is_ok());
     }
 
     #[tokio::test]
@@ -158,9 +280,14 @@ mod tests {
             .times(2)
             .returning(|_, _, _| Ok(()));
 
-        let handler = EventHandler::new(mock_event, mock_agg);
+        let sn_service = SerialNumberService::new(StubSnRepo::new());
+        let handler = EventHandler::new(mock_event, mock_agg, sn_service);
+
+        let mut common = make_common();
+        common.biz_step = Some("packing".to_string());
+
         let event = EpcisEvent::AggregationEvent(AggregationEventData {
-            common: make_common(),
+            common,
             action: Action::Add,
             parent_id: Some("urn:epc:id:sscc:0614141.1234567890".to_string()),
             child_epcs: vec![
@@ -170,8 +297,7 @@ mod tests {
             child_quantity_list: vec![],
         });
 
-        let result = handler.handle_event(&event).await;
-        assert!(result.is_ok());
+        assert!(handler.handle_event(&event).await.is_ok());
     }
 
     #[tokio::test]
@@ -189,7 +315,9 @@ mod tests {
             .times(2)
             .returning(|_, _| Ok(()));
 
-        let handler = EventHandler::new(mock_event, mock_agg);
+        let sn_service = SerialNumberService::new(StubSnRepo::new());
+        let handler = EventHandler::new(mock_event, mock_agg, sn_service);
+
         let event = EpcisEvent::AggregationEvent(AggregationEventData {
             common: make_common(),
             action: Action::Delete,
@@ -201,7 +329,6 @@ mod tests {
             child_quantity_list: vec![],
         });
 
-        let result = handler.handle_event(&event).await;
-        assert!(result.is_ok());
+        assert!(handler.handle_event(&event).await.is_ok());
     }
 }

@@ -3,7 +3,7 @@ use rumqttc::v5::{AsyncClient, EventLoop, MqttOptions};
 use tracing::{error, info, warn};
 
 use ephemeris_core::domain::EpcisEvent;
-use ephemeris_core::repository::{AggregationRepository, EventRepository};
+use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
 
 use crate::handler::EventHandler;
 
@@ -38,10 +38,11 @@ impl MqttSubscriber {
     ///
     /// This method runs indefinitely, polling the MQTT event loop and dispatching
     /// valid EPCIS event payloads to the handler.
-    pub async fn run<E, A>(mut self, handler: EventHandler<E, A>)
+    pub async fn run<E, A, S>(mut self, handler: EventHandler<E, A, S>)
     where
         E: EventRepository + 'static,
         A: AggregationRepository + 'static,
+        S: SerialNumberRepository + 'static,
     {
         loop {
             match self.eventloop.poll().await {
