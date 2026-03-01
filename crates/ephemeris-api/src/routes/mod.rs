@@ -1,3 +1,4 @@
 pub mod events;
 pub mod health;
 pub mod hierarchy;
+pub mod serial_numbers;

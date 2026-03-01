@@ -1,10 +1,9 @@
-use ephemeris_core::repository::{AggregationRepository, EventRepository};
+use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
+use ephemeris_core::service::SerialNumberService;
 
-/// Shared application state holding repository implementations.
-///
-/// Generic over the concrete repository types to allow different backends
-/// (PostgreSQL, ArangoDB, in-memory mocks) to be injected at startup.
-pub struct AppState<E: EventRepository, A: AggregationRepository> {
+/// Shared application state holding repository implementations and services.
+pub struct AppState<E: EventRepository, A: AggregationRepository, S: SerialNumberRepository> {
     pub event_repo: E,
     pub agg_repo: A,
+    pub sn_service: SerialNumberService<S>,
 }
