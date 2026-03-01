@@ -13,6 +13,10 @@ pub struct PgEventRepository {
 }
 
 impl PgEventRepository {
+    pub fn from_pool(pool: Pool) -> Self {
+        Self { pool }
+    }
+
     pub async fn connect(conn_str: &str) -> Result<Self, RepoError> {
         let mut cfg = Config::new();
         for part in conn_str.split_whitespace() {
@@ -260,5 +264,106 @@ mod tests {
         let id1 = repo.store_event(&event).await.unwrap();
         let id2 = repo.store_event(&event).await.unwrap();
         assert_eq!(id1.0, id2.0);
+    }
+
+    #[tokio::test]
+    async fn test_query_by_biz_step() {
+        let (repo, _container) = setup_test_db().await;
+
+        let shipping_event: EpcisEvent = serde_json::from_str(
+            r#"{
+            "type": "ObjectEvent",
+            "action": "OBSERVE",
+            "eventTime": "2020-01-01T10:00:00.000+00:00",
+            "eventTimeZoneOffset": "+00:00",
+            "epcList": ["urn:epc:id:sgtin:0614141.107346.1001"],
+            "bizStep": "shipping"
+        }"#,
+        )
+        .unwrap();
+
+        let receiving_event: EpcisEvent = serde_json::from_str(
+            r#"{
+            "type": "ObjectEvent",
+            "action": "OBSERVE",
+            "eventTime": "2020-01-02T10:00:00.000+00:00",
+            "eventTimeZoneOffset": "+00:00",
+            "epcList": ["urn:epc:id:sgtin:0614141.107346.1002"],
+            "bizStep": "receiving"
+        }"#,
+        )
+        .unwrap();
+
+        repo.store_event(&shipping_event).await.unwrap();
+        repo.store_event(&receiving_event).await.unwrap();
+
+        let query = EventQuery {
+            eq_biz_step: Some("shipping".to_string()),
+            ..Default::default()
+        };
+
+        let results = repo.query_events(&query).await.unwrap();
+        assert_eq!(results.len(), 1);
+        match &results[0] {
+            EpcisEvent::ObjectEvent(data) => {
+                assert_eq!(data.common.biz_step.as_deref(), Some("shipping"));
+            }
+            _ => panic!("Expected ObjectEvent"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_query_by_time_range() {
+        let (repo, _container) = setup_test_db().await;
+
+        let early_event: EpcisEvent = serde_json::from_str(
+            r#"{
+            "type": "ObjectEvent",
+            "action": "OBSERVE",
+            "eventTime": "2020-01-01T10:00:00.000+00:00",
+            "eventTimeZoneOffset": "+00:00",
+            "epcList": ["urn:epc:id:sgtin:0614141.107346.2001"]
+        }"#,
+        )
+        .unwrap();
+
+        let mid_event: EpcisEvent = serde_json::from_str(
+            r#"{
+            "type": "ObjectEvent",
+            "action": "OBSERVE",
+            "eventTime": "2020-06-15T10:00:00.000+00:00",
+            "eventTimeZoneOffset": "+00:00",
+            "epcList": ["urn:epc:id:sgtin:0614141.107346.2002"]
+        }"#,
+        )
+        .unwrap();
+
+        let late_event: EpcisEvent = serde_json::from_str(
+            r#"{
+            "type": "ObjectEvent",
+            "action": "OBSERVE",
+            "eventTime": "2020-12-31T10:00:00.000+00:00",
+            "eventTimeZoneOffset": "+00:00",
+            "epcList": ["urn:epc:id:sgtin:0614141.107346.2003"]
+        }"#,
+        )
+        .unwrap();
+
+        repo.store_event(&early_event).await.unwrap();
+        repo.store_event(&mid_event).await.unwrap();
+        repo.store_event(&late_event).await.unwrap();
+
+        let query = EventQuery {
+            ge_event_time: Some(
+                chrono::DateTime::parse_from_rfc3339("2020-03-01T00:00:00+00:00").unwrap(),
+            ),
+            lt_event_time: Some(
+                chrono::DateTime::parse_from_rfc3339("2020-09-01T00:00:00+00:00").unwrap(),
+            ),
+            ..Default::default()
+        };
+
+        let results = repo.query_events(&query).await.unwrap();
+        assert_eq!(results.len(), 1);
     }
 }
