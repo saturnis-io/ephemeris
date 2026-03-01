@@ -8,7 +8,8 @@ mod config;
 use config::{AppConfig, Cli};
 
 use ephemeris_api::AppState;
-use ephemeris_core::repository::{AggregationRepository, EventRepository};
+use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
+use ephemeris_core::service::SerialNumberService;
 use ephemeris_mqtt::{EventHandler, MqttSubscriber};
 
 #[tokio::main]
@@ -44,7 +45,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let agg_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
             let agg_repo = ephemeris_pg::PgAggregationRepository::new(agg_pool);
 
-            run_app(event_repo, agg_repo, app_config).await
+            let sn_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
+            let sn_repo = ephemeris_pg::PgSerialNumberRepository::new(sn_pool);
+
+            run_app(event_repo, agg_repo, sn_repo, app_config).await
         }
         #[cfg(feature = "enterprise-arango")]
         "arango" => {
@@ -82,7 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "packaging_hierarchy".to_string(),
             );
 
-            run_app(event_repo, agg_repo, app_config).await
+            let sn_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
+            let sn_repo = ephemeris_pg::PgSerialNumberRepository::new(sn_pool);
+
+            run_app(event_repo, agg_repo, sn_repo, app_config).await
         }
         other => {
             #[cfg(not(feature = "enterprise-arango"))]
@@ -99,18 +106,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn run_app<E, A>(
+async fn run_app<E, A, S>(
     event_repo: E,
     agg_repo: A,
+    sn_repo: S,
     app_config: AppConfig,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     E: EventRepository + Clone + 'static,
     A: AggregationRepository + Clone + 'static,
+    S: SerialNumberRepository + Clone + 'static,
 {
+    let sn_service = SerialNumberService::new(sn_repo.clone());
+
     let state = Arc::new(AppState {
         event_repo: event_repo.clone(),
         agg_repo: agg_repo.clone(),
+        sn_service: SerialNumberService::new(sn_repo),
     });
 
     // Build API router
@@ -133,7 +145,7 @@ where
         .map_err(|e| format!("MQTT subscribe failed: {e}"))?;
     info!(topics = ?mqtt_config.topics, "MQTT subscriber started");
 
-    let handler = EventHandler::new(event_repo, agg_repo);
+    let handler = EventHandler::new(event_repo, agg_repo, sn_service);
 
     // Run MQTT event loop in background task
     let mqtt_handle = tokio::spawn(async move {
