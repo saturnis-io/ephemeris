@@ -1,7 +1,11 @@
 use std::fmt;
 use std::str::FromStr;
 
+use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
+
+use super::epc::Epc;
+use super::event::EventId;
 
 /// Serial number lifecycle state per the OPEN-SCS standard.
 ///
@@ -70,6 +74,48 @@ pub fn is_valid_transition(from: SnState, to: SnState) -> bool {
             | (SnState::Commissioned, SnState::Destroyed)
             | (SnState::Commissioned, SnState::Released)
     )
+}
+
+/// A tracked serial number with its current state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerialNumber {
+    pub epc: Epc,
+    pub state: SnState,
+    pub sid_class: Option<String>,
+    pub pool_id: Option<String>,
+    pub updated_at: DateTime<FixedOffset>,
+    pub created_at: DateTime<FixedOffset>,
+}
+
+/// Source of a state transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransitionSource {
+    Mqtt,
+    RestApi,
+    System,
+}
+
+/// Audit record of a single state transition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnTransition {
+    pub epc: Epc,
+    pub from_state: SnState,
+    pub to_state: SnState,
+    pub biz_step: String,
+    pub event_id: Option<EventId>,
+    pub source: TransitionSource,
+    pub timestamp: DateTime<FixedOffset>,
+}
+
+/// Query parameters for serial number searches.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SerialNumberQuery {
+    pub state: Option<SnState>,
+    pub sid_class: Option<String>,
+    pub pool_id: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 impl fmt::Display for SnState {
@@ -235,6 +281,30 @@ mod tests {
             biz_step_to_target_state("http://open-scs.org/bizstep/sn_encoding"),
             Some(SnState::Encoded),
         );
+    }
+
+    #[test]
+    fn test_serial_number_serde() {
+        let sn = SerialNumber {
+            epc: Epc::new("urn:epc:id:sgtin:0614141.107346.2017"),
+            state: SnState::Commissioned,
+            sid_class: Some("sgtin".to_string()),
+            pool_id: None,
+            updated_at: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").unwrap(),
+            created_at: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").unwrap(),
+        };
+        let json = serde_json::to_string(&sn).unwrap();
+        let back: SerialNumber = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.state, SnState::Commissioned);
+        assert_eq!(back.epc, sn.epc);
+    }
+
+    #[test]
+    fn test_transition_source_serde() {
+        let json = serde_json::to_string(&TransitionSource::Mqtt).unwrap();
+        assert_eq!(json, "\"mqtt\"");
+        let back: TransitionSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, TransitionSource::Mqtt);
     }
 
     #[test]
