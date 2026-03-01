@@ -1,0 +1,19 @@
+[package]
+name = "ephemeris-mqtt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ephemeris-core = { path = "../ephemeris-core" }
+rumqttc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+mockall = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
