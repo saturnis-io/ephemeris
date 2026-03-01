@@ -11,6 +11,7 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 trait-variant = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
