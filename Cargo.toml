@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/ephemeris-core",
     "crates/ephemeris-pg",
+    "crates/ephemeris-mqtt",
 ]
 
 [workspace.package]
