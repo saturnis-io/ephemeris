@@ -1,0 +1,19 @@
+[package]
+name = "ephemeris-testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ephemeris-core = { path = "../ephemeris-core" }
+axum = { workspace = true }
+chrono = { workspace = true }
+rand = { workspace = true }
+rumqttc = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }

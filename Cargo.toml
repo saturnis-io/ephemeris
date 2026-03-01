@@ -6,6 +6,7 @@ members = [
     "crates/ephemeris-mqtt",
     "crates/ephemeris-api",
     "crates/ephemeris-arango",
+    "crates/ephemeris-testkit",
 ]
 
 [workspace.package]
@@ -48,7 +49,8 @@ config = { version = "0.15", features = ["toml"] }
 clap = { version = "4", features = ["derive"] }
 toml = "0.8"
 
-# Testing
+# Testing / Testkit
+rand = "0.9"
 mockall = "0.14"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }

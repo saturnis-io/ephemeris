@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ephemeris Test Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }
+        h1 { margin-bottom: 1.5rem; color: #38bdf8; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .panel { background: #1e293b; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .panel h2 { margin-bottom: 1rem; color: #94a3b8; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        label { display: block; margin-bottom: 0.5rem; color: #94a3b8; font-size: 0.875rem; }
+        select, textarea, button { font-family: inherit; font-size: 0.875rem; }
+        select { width: 100%; padding: 0.5rem; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 4px; margin-bottom: 1rem; }
+        textarea { width: 100%; height: 280px; padding: 0.75rem; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 4px; font-family: 'Cascadia Code', 'Fira Code', monospace; resize: vertical; tab-size: 2; }
+        button { padding: 0.625rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        .status { margin-top: 0.75rem; padding: 0.5rem; border-radius: 4px; font-size: 0.8125rem; }
+        .status.ok { background: #064e3b; color: #6ee7b7; }
+        .status.err { background: #7f1d1d; color: #fca5a5; }
+        .feed { max-height: 350px; overflow-y: auto; font-family: monospace; font-size: 0.8125rem; }
+        .feed-item { padding: 0.5rem; border-bottom: 1px solid #334155; }
+        .feed-item .type { color: #38bdf8; font-weight: 600; margin-right: 0.5rem; }
+        .feed-item .time { color: #64748b; }
+        .actions { display: flex; gap: 0.75rem; align-items: center; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ephemeris Test Dashboard</h1>
+
+        <div class="panel">
+            <h2>Send EPCIS Event</h2>
+            <label for="event-type">Event Type</label>
+            <select id="event-type">
+                <option value="ObjectEvent">ObjectEvent</option>
+                <option value="AggregationEvent">AggregationEvent</option>
+            </select>
+            <label for="payload">JSON Payload</label>
+            <textarea id="payload"></textarea>
+            <div class="actions">
+                <button id="send-btn">Send Event</button>
+                <button id="generate-btn" style="background:#059669">Generate Random</button>
+            </div>
+            <div id="status" class="status" style="display:none"></div>
+        </div>
+
+        <div class="panel">
+            <h2>Live Event Feed</h2>
+            <div id="feed" class="feed">
+                <div style="color:#64748b;padding:0.5rem">Polling for events...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TEMPLATES = {
+            ObjectEvent: JSON.stringify({
+                type: "ObjectEvent",
+                eventTime: new Date().toISOString(),
+                eventTimeZoneOffset: "+00:00",
+                action: "OBSERVE",
+                epcList: ["urn:epc:id:sgtin:0614141.107346.2017"],
+                bizStep: "urn:epcglobal:cbv:bizstep:shipping",
+                readPoint: { id: "urn:epc:id:sgln:0614141.07346.1234" }
+            }, null, 2),
+            AggregationEvent: JSON.stringify({
+                type: "AggregationEvent",
+                eventTime: new Date().toISOString(),
+                eventTimeZoneOffset: "+00:00",
+                action: "ADD",
+                parentID: "urn:epc:id:sscc:0614141.1234567890",
+                childEPCs: [
+                    "urn:epc:id:sgtin:0614141.107346.2017",
+                    "urn:epc:id:sgtin:0614141.107346.2018"
+                ],
+                bizStep: "urn:epcglobal:cbv:bizstep:packing"
+            }, null, 2)
+        };
+
+        const payloadEl = document.getElementById('payload');
+        const typeEl = document.getElementById('event-type');
+        const statusEl = document.getElementById('status');
+        const feedEl = document.getElementById('feed');
+        const sendBtn = document.getElementById('send-btn');
+        const genBtn = document.getElementById('generate-btn');
+
+        let apiBaseUrl = '';
+
+        typeEl.addEventListener('change', function() {
+            payloadEl.value = TEMPLATES[typeEl.value];
+        });
+        payloadEl.value = TEMPLATES['ObjectEvent'];
+
+        genBtn.addEventListener('click', function() {
+            var tmpl = JSON.parse(TEMPLATES[typeEl.value]);
+            tmpl.eventTime = new Date().toISOString();
+            if (tmpl.epcList) {
+                tmpl.epcList = tmpl.epcList.map(function() {
+                    return 'urn:epc:id:sgtin:0614141.' + String(Math.floor(Math.random()*900000)+100000) + '.' + String(Math.floor(Math.random()*9000)+1000);
+                });
+            }
+            if (tmpl.childEPCs) {
+                tmpl.childEPCs = tmpl.childEPCs.map(function() {
+                    return 'urn:epc:id:sgtin:0614141.' + String(Math.floor(Math.random()*900000)+100000) + '.' + String(Math.floor(Math.random()*9000)+1000);
+                });
+            }
+            payloadEl.value = JSON.stringify(tmpl, null, 2);
+        });
+
+        sendBtn.addEventListener('click', async function() {
+            sendBtn.disabled = true;
+            try {
+                var resp = await fetch('/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: payloadEl.value
+                });
+                var text = await resp.text();
+                statusEl.style.display = 'block';
+                if (resp.ok) {
+                    statusEl.className = 'status ok';
+                } else {
+                    statusEl.className = 'status err';
+                }
+                statusEl.textContent = text;
+            } catch (e) {
+                statusEl.style.display = 'block';
+                statusEl.className = 'status err';
+                statusEl.textContent = 'Network error: ' + e.message;
+            }
+            sendBtn.disabled = false;
+        });
+
+        async function loadConfig() {
+            try {
+                var resp = await fetch('/config');
+                var cfg = await resp.json();
+                apiBaseUrl = cfg.apiBaseUrl;
+            } catch (e) { /* ignore */ }
+        }
+
+        async function pollFeed() {
+            if (!apiBaseUrl) return;
+            try {
+                var resp = await fetch(apiBaseUrl + '/events?limit=20');
+                if (!resp.ok) return;
+                var events = await resp.json();
+                if (!Array.isArray(events) || events.length === 0) return;
+
+                while (feedEl.firstChild) {
+                    feedEl.removeChild(feedEl.firstChild);
+                }
+                events.forEach(function(ev) {
+                    var div = document.createElement('div');
+                    div.className = 'feed-item';
+
+                    var typeSpan = document.createElement('span');
+                    typeSpan.className = 'type';
+                    typeSpan.textContent = ev.type || 'Unknown';
+
+                    var timeSpan = document.createElement('span');
+                    timeSpan.className = 'time';
+                    timeSpan.textContent = ev.eventTime || (ev.common && ev.common.eventTime) || '';
+
+                    div.appendChild(typeSpan);
+                    div.appendChild(timeSpan);
+                    feedEl.appendChild(div);
+                });
+            } catch (e) { /* ignore polling errors */ }
+        }
+
+        loadConfig().then(function() {
+            setInterval(pollFeed, 3000);
+            pollFeed();
+        });
+    </script>
+</body>
+</html>
