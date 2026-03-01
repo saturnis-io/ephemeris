@@ -31,4 +31,33 @@ CREATE INDEX IF NOT EXISTS idx_agg_path_gist ON aggregation USING GIST (path);
 CREATE INDEX IF NOT EXISTS idx_agg_path_btree ON aggregation USING BTREE (path);
 CREATE INDEX IF NOT EXISTS idx_agg_parent ON aggregation (parent_epc);
 CREATE INDEX IF NOT EXISTS idx_agg_child ON aggregation (child_epc);
+
+-- Serial Number State Tracking (OPEN-SCS lifecycle)
+CREATE TABLE IF NOT EXISTS serial_numbers (
+    epc         TEXT PRIMARY KEY,
+    state       TEXT NOT NULL,
+    sid_class   TEXT,
+    pool_id     TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sn_state ON serial_numbers (state);
+CREATE INDEX IF NOT EXISTS idx_sn_sid_class ON serial_numbers (sid_class) WHERE sid_class IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_sn_pool ON serial_numbers (pool_id) WHERE pool_id IS NOT NULL;
+
+-- Serial Number Transition Audit Log
+CREATE TABLE IF NOT EXISTS sn_transitions (
+    id          SERIAL PRIMARY KEY,
+    epc         TEXT NOT NULL,
+    from_state  TEXT NOT NULL,
+    to_state    TEXT NOT NULL,
+    biz_step    TEXT NOT NULL,
+    event_id    UUID REFERENCES epcis_events(id),
+    source      TEXT NOT NULL,
+    timestamp   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_snt_epc ON sn_transitions (epc, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_snt_event ON sn_transitions (event_id) WHERE event_id IS NOT NULL;
 "#;
