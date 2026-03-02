@@ -1,0 +1,27 @@
+# Ephemeris Configuration — Enterprise ArangoDB mode
+#
+# Uses PostgreSQL for event ledger + serial numbers,
+# ArangoDB for aggregation hierarchy (graph queries).
+# Requires: cargo build --features enterprise-arango
+
+[mqtt]
+broker_url = "mqtt://localhost:1883"
+client_id = "ephemeris-site-01"
+topics = ["plant/+/events/#"]
+qos = 1
+
+[database]
+backend = "arango"
+
+[database.postgres]
+url = "postgresql://ephemeris:ephemeris@localhost:5432/ephemeris"
+pool_size = 10
+
+[database.arango]
+url = "http://localhost:8529"
+database = "ephemeris"
+username = "root"
+password = "ephemeris"
+
+[api]
+bind = "0.0.0.0:8080"
