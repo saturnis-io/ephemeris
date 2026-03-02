@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use ephemeris_core::domain::{EpcisEvent, EventId, EventQuery};
+use ephemeris_core::domain::{Action, Epc, EpcisEvent, EventId, EventQuery, TransitionSource};
 use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
 
 use crate::state::AppState;
@@ -57,6 +57,9 @@ pub async fn get_event<E: EventRepository, A: AggregationRepository, S: SerialNu
 }
 
 /// POST /events — capture a new EPCIS event.
+///
+/// Stores the event, then processes aggregation hierarchy and SN state
+/// transitions — the same pipeline as the MQTT ingestion path.
 pub async fn capture_event<
     E: EventRepository,
     A: AggregationRepository,
@@ -65,14 +68,71 @@ pub async fn capture_event<
     State(state): State<Arc<AppState<E, A, S>>>,
     Json(event): Json<EpcisEvent>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
-    match state.event_repo.store_event(&event).await {
-        Ok(event_id) => Ok((StatusCode::CREATED, Json(json!({"eventId": event_id})))),
-        Err(e) => {
-            tracing::error!("Failed to capture event: {e}");
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            ))
+    let stored_id = state.event_repo.store_event(&event).await.map_err(|e| {
+        tracing::error!("Failed to capture event: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
+
+    // Process aggregation hierarchy
+    if let EpcisEvent::AggregationEvent(data) = &event
+        && let Some(ref parent_id_str) = data.parent_id
+    {
+        let parent = Epc::new(parent_id_str);
+        match data.action {
+            Action::Add | Action::Observe => {
+                for child_epc_str in &data.child_epcs {
+                    let child = Epc::new(child_epc_str);
+                    if let Err(e) = state.agg_repo.add_child(&parent, &child, &stored_id).await {
+                        tracing::warn!(parent = %parent, child = %child, error = %e, "failed to add child");
+                    }
+                }
+            }
+            Action::Delete => {
+                for child_epc_str in &data.child_epcs {
+                    let child = Epc::new(child_epc_str);
+                    if let Err(e) = state.agg_repo.remove_child(&parent, &child).await {
+                        tracing::warn!(parent = %parent, child = %child, error = %e, "failed to remove child");
+                    }
+                }
+            }
+        }
+    }
+
+    // Drive SN state transitions from bizStep
+    if let Some(biz_step) = event.common().biz_step.as_deref() {
+        let epcs = extract_epcs(&event);
+        for epc in epcs {
+            if let Err(e) = state
+                .sn_service
+                .process_transition(&epc, biz_step, Some(&stored_id), TransitionSource::RestApi)
+                .await
+            {
+                tracing::warn!(epc = %epc, error = %e, "failed to update SN state");
+            }
+        }
+    }
+
+    Ok((StatusCode::CREATED, Json(json!({"eventId": stored_id}))))
+}
+
+/// Extract all EPCs from an event for SN state tracking.
+fn extract_epcs(event: &EpcisEvent) -> Vec<Epc> {
+    match event {
+        EpcisEvent::ObjectEvent(data) => data.epc_list.iter().map(Epc::new).collect(),
+        EpcisEvent::AggregationEvent(data) => {
+            let mut epcs: Vec<Epc> = data.child_epcs.iter().map(Epc::new).collect();
+            if let Some(ref parent) = data.parent_id {
+                epcs.push(Epc::new(parent));
+            }
+            epcs
+        }
+        EpcisEvent::TransformationEvent(data) => {
+            let mut epcs: Vec<Epc> = data.input_epc_list.iter().map(Epc::new).collect();
+            epcs.extend(data.output_epc_list.iter().map(Epc::new));
+            epcs
         }
     }
 }
