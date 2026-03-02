@@ -100,6 +100,17 @@ pub enum EpcisEvent {
     TransformationEvent(TransformationEventData),
 }
 
+impl EpcisEvent {
+    /// Access the common fields shared by all event types.
+    pub fn common(&self) -> &CommonEventFields {
+        match self {
+            Self::ObjectEvent(data) => &data.common,
+            Self::AggregationEvent(data) => &data.common,
+            Self::TransformationEvent(data) => &data.common,
+        }
+    }
+}
+
 /// Object event data — tracks EPCs with an action at a point in time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

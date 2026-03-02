@@ -120,37 +120,79 @@ mod tests {
         }
     }
 
-    struct StubSnRepo;
+    use std::sync::Mutex;
+
+    /// In-memory stub that supports upsert/get/query/transition for API tests.
+    struct StubSnRepo {
+        state: Mutex<std::collections::HashMap<String, SerialNumber>>,
+        transitions: Mutex<Vec<SnTransition>>,
+    }
+
+    impl StubSnRepo {
+        fn new() -> Self {
+            Self {
+                state: Mutex::new(std::collections::HashMap::new()),
+                transitions: Mutex::new(Vec::new()),
+            }
+        }
+    }
 
     impl ephemeris_core::repository::SerialNumberRepository for StubSnRepo {
         async fn upsert_state(
             &self,
-            _epc: &Epc,
-            _state: SnState,
-            _sid_class: Option<&str>,
-            _pool_id: Option<&str>,
+            epc: &Epc,
+            state: SnState,
+            sid_class: Option<&str>,
+            pool_id: Option<&str>,
         ) -> Result<(), RepoError> {
+            let now = chrono::Utc::now().fixed_offset();
+            let mut map = self.state.lock().unwrap();
+            let existing = map.get(epc.as_str());
+            let sn = SerialNumber {
+                epc: epc.clone(),
+                state,
+                sid_class: sid_class
+                    .map(String::from)
+                    .or_else(|| existing.and_then(|s| s.sid_class.clone())),
+                pool_id: pool_id
+                    .map(String::from)
+                    .or_else(|| existing.and_then(|s| s.pool_id.clone())),
+                created_at: existing.map(|s| s.created_at).unwrap_or(now),
+                updated_at: now,
+            };
+            map.insert(epc.as_str().to_string(), sn);
             Ok(())
         }
 
-        async fn get_state(&self, _epc: &Epc) -> Result<Option<SerialNumber>, RepoError> {
-            Ok(None)
+        async fn get_state(&self, epc: &Epc) -> Result<Option<SerialNumber>, RepoError> {
+            Ok(self.state.lock().unwrap().get(epc.as_str()).cloned())
         }
 
-        async fn query(&self, _query: &SerialNumberQuery) -> Result<Vec<SerialNumber>, RepoError> {
-            Ok(vec![])
+        async fn query(&self, query: &SerialNumberQuery) -> Result<Vec<SerialNumber>, RepoError> {
+            let map = self.state.lock().unwrap();
+            let results: Vec<SerialNumber> = map
+                .values()
+                .filter(|sn| query.state.as_ref().is_none_or(|s| sn.state == *s))
+                .cloned()
+                .collect();
+            Ok(results)
         }
 
-        async fn record_transition(&self, _transition: &SnTransition) -> Result<(), RepoError> {
+        async fn record_transition(&self, transition: &SnTransition) -> Result<(), RepoError> {
+            self.transitions.lock().unwrap().push(transition.clone());
             Ok(())
         }
 
-        async fn get_history(
-            &self,
-            _epc: &Epc,
-            _limit: u32,
-        ) -> Result<Vec<SnTransition>, RepoError> {
-            Ok(vec![])
+        async fn get_history(&self, epc: &Epc, limit: u32) -> Result<Vec<SnTransition>, RepoError> {
+            let transitions = self.transitions.lock().unwrap();
+            let results: Vec<SnTransition> = transitions
+                .iter()
+                .filter(|t| t.epc == *epc)
+                .rev()
+                .take(limit as usize)
+                .cloned()
+                .collect();
+            Ok(results)
         }
     }
 
@@ -159,7 +201,7 @@ mod tests {
         let state = Arc::new(AppState {
             event_repo: StubEventRepo,
             agg_repo: StubAggRepo,
-            sn_service: SerialNumberService::new(StubSnRepo),
+            sn_service: SerialNumberService::new(StubSnRepo::new()),
         });
         let app = create_router(state);
 
@@ -187,7 +229,7 @@ mod tests {
         let state = Arc::new(AppState {
             event_repo: StubEventRepo,
             agg_repo: StubAggRepo,
-            sn_service: SerialNumberService::new(StubSnRepo),
+            sn_service: SerialNumberService::new(StubSnRepo::new()),
         });
         let app = create_router(state);
 
@@ -202,5 +244,142 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn query_serial_numbers_by_state() {
+        let sn_repo = StubSnRepo::new();
+        // Pre-populate some state
+        sn_repo
+            .upsert_state(
+                &Epc::new("urn:epc:id:sgtin:0614141.107346.001"),
+                SnState::Commissioned,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        sn_repo
+            .upsert_state(
+                &Epc::new("urn:epc:id:sgtin:0614141.107346.002"),
+                SnState::Released,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let state = Arc::new(AppState {
+            event_repo: StubEventRepo,
+            agg_repo: StubAggRepo,
+            sn_service: SerialNumberService::new(sn_repo),
+        });
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/serial-numbers?state=commissioned")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["state"], "commissioned");
+    }
+
+    #[tokio::test]
+    async fn get_sn_history_returns_transitions() {
+        use ephemeris_core::domain::TransitionSource;
+
+        let sn_repo = StubSnRepo::new();
+        // Record a transition directly
+        sn_repo
+            .record_transition(&SnTransition {
+                epc: Epc::new("urn:epc:id:sgtin:0614141.107346.001"),
+                from_state: SnState::Encoded,
+                to_state: SnState::Commissioned,
+                biz_step: "commissioning".to_string(),
+                event_id: None,
+                source: TransitionSource::Mqtt,
+                timestamp: chrono::Utc::now().fixed_offset(),
+            })
+            .await
+            .unwrap();
+
+        let state = Arc::new(AppState {
+            event_repo: StubEventRepo,
+            agg_repo: StubAggRepo,
+            sn_service: SerialNumberService::new(sn_repo),
+        });
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/serial-numbers/urn:epc:id:sgtin:0614141.107346.001/history")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let history: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0]["biz_step"], "commissioning");
+    }
+
+    #[tokio::test]
+    async fn manual_transition_updates_state() {
+        let sn_repo = StubSnRepo::new();
+        // Pre-populate a commissioned SN
+        sn_repo
+            .upsert_state(
+                &Epc::new("urn:epc:id:sgtin:0614141.107346.001"),
+                SnState::Commissioned,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let state = Arc::new(AppState {
+            event_repo: StubEventRepo,
+            agg_repo: StubAggRepo,
+            sn_service: SerialNumberService::new(sn_repo),
+        });
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/serial-numbers/urn:epc:id:sgtin:0614141.107346.001/transition")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"targetState": "destroyed", "reason": "damaged on line"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["state"], "destroyed");
     }
 }

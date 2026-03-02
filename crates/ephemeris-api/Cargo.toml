@@ -16,4 +16,5 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
 mockall = { workspace = true }

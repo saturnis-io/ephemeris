@@ -59,11 +59,7 @@ where
         }
 
         // Drive SN state transitions from bizStep
-        let biz_step = match event {
-            EpcisEvent::ObjectEvent(data) => data.common.biz_step.as_deref(),
-            EpcisEvent::AggregationEvent(data) => data.common.biz_step.as_deref(),
-            EpcisEvent::TransformationEvent(data) => data.common.biz_step.as_deref(),
-        };
+        let biz_step = event.common().biz_step.as_deref();
 
         if let Some(biz_step) = biz_step {
             let epcs = Self::extract_epcs(event);
@@ -325,6 +321,69 @@ mod tests {
             child_quantity_list: vec![],
         });
 
+        assert!(handler.handle_event(&event).await.is_ok());
+    }
+
+    /// SN repo that always fails — proves handler error isolation.
+    struct FailingSnRepo;
+
+    impl SerialNumberRepository for FailingSnRepo {
+        async fn upsert_state(
+            &self,
+            _epc: &Epc,
+            _state: SnState,
+            _sid_class: Option<&str>,
+            _pool_id: Option<&str>,
+        ) -> Result<(), RepoError> {
+            Err(RepoError::Connection("SN repo down".to_string()))
+        }
+
+        async fn get_state(&self, _epc: &Epc) -> Result<Option<SerialNumber>, RepoError> {
+            Err(RepoError::Connection("SN repo down".to_string()))
+        }
+
+        async fn query(&self, _query: &SerialNumberQuery) -> Result<Vec<SerialNumber>, RepoError> {
+            Err(RepoError::Connection("SN repo down".to_string()))
+        }
+
+        async fn record_transition(&self, _transition: &SnTransition) -> Result<(), RepoError> {
+            Err(RepoError::Connection("SN repo down".to_string()))
+        }
+
+        async fn get_history(
+            &self,
+            _epc: &Epc,
+            _limit: u32,
+        ) -> Result<Vec<SnTransition>, RepoError> {
+            Err(RepoError::Connection("SN repo down".to_string()))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sn_repo_failure_does_not_break_handle_event() {
+        let mut mock_event = MockEventRepo::new();
+        let mock_agg = MockAggRepo::new();
+
+        mock_event
+            .expect_store_event()
+            .times(1)
+            .returning(|_| Ok(EventId::new()));
+
+        let sn_service = SerialNumberService::new(FailingSnRepo);
+        let handler = EventHandler::new(mock_event, mock_agg, sn_service);
+
+        let mut common = make_common();
+        common.biz_step = Some("commissioning".to_string());
+
+        let event = EpcisEvent::ObjectEvent(ObjectEventData {
+            common,
+            action: Action::Observe,
+            epc_list: vec!["urn:epc:id:sgtin:0614141.107346.2017".to_string()],
+            quantity_list: vec![],
+        });
+
+        // handle_event should succeed despite SN repo being down
+        // (SN errors are warn-logged but don't fail the event)
         assert!(handler.handle_event(&event).await.is_ok());
     }
 }

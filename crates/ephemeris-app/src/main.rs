@@ -117,12 +117,10 @@ where
     A: AggregationRepository + Clone + 'static,
     S: SerialNumberRepository + Clone + 'static,
 {
-    let sn_service = SerialNumberService::new(sn_repo.clone());
-
     let state = Arc::new(AppState {
         event_repo: event_repo.clone(),
         agg_repo: agg_repo.clone(),
-        sn_service: SerialNumberService::new(sn_repo),
+        sn_service: SerialNumberService::new(sn_repo.clone()),
     });
 
     // Build API router
@@ -145,7 +143,7 @@ where
         .map_err(|e| format!("MQTT subscribe failed: {e}"))?;
     info!(topics = ?mqtt_config.topics, "MQTT subscriber started");
 
-    let handler = EventHandler::new(event_repo, agg_repo, sn_service);
+    let handler = EventHandler::new(event_repo, agg_repo, SerialNumberService::new(sn_repo));
 
     // Run MQTT event loop in background task
     let mqtt_handle = tokio::spawn(async move {

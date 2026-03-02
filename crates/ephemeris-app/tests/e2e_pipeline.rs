@@ -14,8 +14,8 @@ use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
 use ephemeris_api::{AppState, create_router};
-use ephemeris_core::domain::{EpcisEvent, EventQuery};
-use ephemeris_core::repository::{AggregationRepository, EventRepository};
+use ephemeris_core::domain::{Epc, EpcisEvent, EventQuery, SnState};
+use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
 use ephemeris_core::service::SerialNumberService;
 use ephemeris_mqtt::EventHandler;
 use ephemeris_pg::{PgAggregationRepository, PgEventRepository, PgSerialNumberRepository};
@@ -78,6 +78,17 @@ async fn e2e_object_event_ingest_and_query() {
     .unwrap();
 
     handler.handle_event(&object_event).await.unwrap();
+
+    // 1b. Verify SN state was updated (shipping → Released)
+    let sn = sn_repo
+        .get_state(&Epc::new("urn:epc:id:sgtin:0614141.107346.2017"))
+        .await
+        .unwrap();
+    assert_eq!(
+        sn.unwrap().state,
+        SnState::Released,
+        "shipping event should transition SN to Released"
+    );
 
     // 2. Query via repository directly — verify stored
     let query = EventQuery {

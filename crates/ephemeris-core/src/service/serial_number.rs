@@ -74,6 +74,8 @@ impl<S: SerialNumberRepository> SerialNumberService<S> {
         epc: &Epc,
         target_state: SnState,
         reason: &str,
+        sid_class: Option<&str>,
+        pool_id: Option<&str>,
     ) -> Result<SnState, RepoError> {
         let current = self
             .repo
@@ -83,7 +85,7 @@ impl<S: SerialNumberRepository> SerialNumberService<S> {
             .unwrap_or(SnState::Unassigned);
 
         self.repo
-            .upsert_state(epc, target_state, None, None)
+            .upsert_state(epc, target_state, sid_class, pool_id)
             .await?;
 
         let transition = SnTransition {
@@ -251,7 +253,13 @@ mod tests {
         let service = SerialNumberService::new(repo);
         let epc = Epc::new("urn:epc:id:sgtin:0614141.107346.2017");
         let result = service
-            .manual_override(&epc, SnState::Destroyed, "line scanner missed event")
+            .manual_override(
+                &epc,
+                SnState::Destroyed,
+                "line scanner missed event",
+                None,
+                None,
+            )
             .await
             .unwrap();
 

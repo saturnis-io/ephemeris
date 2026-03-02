@@ -110,12 +110,57 @@ pub struct SnTransition {
 
 /// Query parameters for serial number searches.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SerialNumberQuery {
     pub state: Option<SnState>,
     pub sid_class: Option<String>,
     pub pool_id: Option<String>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
+}
+
+impl SnState {
+    /// Map to the canonical disposition URI (OPEN-SCS for pre-commissioning, GS1 for post).
+    pub fn to_disposition_uri(&self) -> &'static str {
+        match self {
+            Self::Unassigned => "http://open-scs.org/disp/unassigned",
+            Self::Unallocated => "http://open-scs.org/disp/unallocated",
+            Self::Allocated => "http://open-scs.org/disp/allocated",
+            Self::SnInvalid => "http://open-scs.org/disp/sn_invalid",
+            Self::Encoded => "http://open-scs.org/disp/encoded",
+            Self::LabelSampled => "http://open-scs.org/disp/label_sampled",
+            Self::LabelScrapped => "http://open-scs.org/disp/label_scrapped",
+            Self::Commissioned => "urn:epcglobal:cbv:disp:active",
+            Self::Sampled => "http://open-scs.org/disp/sampled",
+            Self::Inactive => "urn:epcglobal:cbv:disp:inactive",
+            Self::Destroyed => "urn:epcglobal:cbv:disp:destroyed",
+            Self::Released => "urn:epcglobal:cbv:disp:in_transit",
+        }
+    }
+
+    /// Parse from a disposition URI (accepts OPEN-SCS and GS1 prefixes).
+    pub fn from_disposition_uri(uri: &str) -> Option<Self> {
+        let shorthand = uri
+            .strip_prefix("http://open-scs.org/disp/")
+            .or_else(|| uri.strip_prefix("urn:epcglobal:cbv:disp:"))
+            .unwrap_or(uri);
+
+        match shorthand {
+            "unassigned" => Some(Self::Unassigned),
+            "unallocated" => Some(Self::Unallocated),
+            "allocated" => Some(Self::Allocated),
+            "sn_invalid" => Some(Self::SnInvalid),
+            "encoded" => Some(Self::Encoded),
+            "label_sampled" => Some(Self::LabelSampled),
+            "label_scrapped" => Some(Self::LabelScrapped),
+            "active" | "commissioned" => Some(Self::Commissioned),
+            "sampled" => Some(Self::Sampled),
+            "inactive" => Some(Self::Inactive),
+            "destroyed" => Some(Self::Destroyed),
+            "in_transit" | "released" => Some(Self::Released),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for SnState {
@@ -305,6 +350,70 @@ mod tests {
         assert_eq!(json, "\"mqtt\"");
         let back: TransitionSource = serde_json::from_str(&json).unwrap();
         assert_eq!(back, TransitionSource::Mqtt);
+    }
+
+    #[test]
+    fn test_disposition_uri_roundtrip() {
+        let all_states = [
+            SnState::Unassigned,
+            SnState::Unallocated,
+            SnState::Allocated,
+            SnState::SnInvalid,
+            SnState::Encoded,
+            SnState::LabelSampled,
+            SnState::LabelScrapped,
+            SnState::Commissioned,
+            SnState::Sampled,
+            SnState::Inactive,
+            SnState::Destroyed,
+            SnState::Released,
+        ];
+
+        for state in all_states {
+            let uri = state.to_disposition_uri();
+            let parsed = SnState::from_disposition_uri(uri).unwrap();
+            assert_eq!(parsed, state, "roundtrip failed for {state:?} -> {uri}");
+        }
+    }
+
+    #[test]
+    fn test_disposition_uri_gs1_mapping() {
+        // Post-commissioning states use GS1 URIs
+        assert_eq!(
+            SnState::Commissioned.to_disposition_uri(),
+            "urn:epcglobal:cbv:disp:active"
+        );
+        assert_eq!(
+            SnState::Released.to_disposition_uri(),
+            "urn:epcglobal:cbv:disp:in_transit"
+        );
+        assert_eq!(
+            SnState::Inactive.to_disposition_uri(),
+            "urn:epcglobal:cbv:disp:inactive"
+        );
+        assert_eq!(
+            SnState::Destroyed.to_disposition_uri(),
+            "urn:epcglobal:cbv:disp:destroyed"
+        );
+    }
+
+    #[test]
+    fn test_from_disposition_uri_both_prefixes() {
+        // OPEN-SCS prefix
+        assert_eq!(
+            SnState::from_disposition_uri("http://open-scs.org/disp/encoded"),
+            Some(SnState::Encoded),
+        );
+        // GS1 prefix
+        assert_eq!(
+            SnState::from_disposition_uri("urn:epcglobal:cbv:disp:active"),
+            Some(SnState::Commissioned),
+        );
+        // Unknown
+        assert_eq!(
+            SnState::from_disposition_uri("http://open-scs.org/disp/bogus"),
+            None
+        );
     }
 
     #[test]
