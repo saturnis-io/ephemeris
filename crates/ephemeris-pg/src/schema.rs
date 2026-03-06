@@ -60,4 +60,26 @@ CREATE TABLE IF NOT EXISTS sn_transitions (
 
 CREATE INDEX IF NOT EXISTS idx_snt_epc ON sn_transitions (epc, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_snt_event ON sn_transitions (event_id) WHERE event_id IS NOT NULL;
+
+-- Serial Number Pools (OPEN-SCS pool management)
+CREATE TABLE IF NOT EXISTS sn_pools (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT NOT NULL,
+    sid_class   TEXT,
+    esm_endpoint TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pools_sid_class ON sn_pools(sid_class) WHERE sid_class IS NOT NULL;
+
+-- Pool selection criteria (OPEN-SCS §6.9)
+CREATE TABLE IF NOT EXISTS pool_criteria (
+    pool_id     UUID NOT NULL REFERENCES sn_pools(id) ON DELETE CASCADE,
+    key         TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    PRIMARY KEY (pool_id, key, value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pool_criteria_key ON pool_criteria(key, value);
 "#;
