@@ -8,8 +8,10 @@ mod config;
 use config::{AppConfig, Cli};
 
 use ephemeris_api::AppState;
-use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
-use ephemeris_core::service::SerialNumberService;
+use ephemeris_core::repository::{
+    AggregationRepository, EsmClient, EventRepository, PoolRepository, SerialNumberRepository,
+};
+use ephemeris_core::service::{PoolService, SerialNumberService};
 use ephemeris_mqtt::{EventHandler, MqttSubscriber};
 
 #[tokio::main]
@@ -48,7 +50,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let sn_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
             let sn_repo = ephemeris_pg::PgSerialNumberRepository::new(sn_pool);
 
-            run_app(event_repo, agg_repo, sn_repo, app_config).await
+            let pool_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
+            let pool_repo = ephemeris_pg::PgPoolRepository::new(pool_pool);
+            let pool_service = PoolService::new(
+                pool_repo,
+                ephemeris_core::service::NoopEsmClient,
+            );
+
+            run_app(event_repo, agg_repo, sn_repo, pool_service, app_config).await
         }
         #[cfg(feature = "enterprise-arango")]
         "arango" => {
@@ -89,7 +98,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let sn_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
             let sn_repo = ephemeris_pg::PgSerialNumberRepository::new(sn_pool);
 
-            run_app(event_repo, agg_repo, sn_repo, app_config).await
+            let pool_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
+            let pool_repo = ephemeris_pg::PgPoolRepository::new(pool_pool);
+            let pool_service = PoolService::new(
+                pool_repo,
+                ephemeris_core::service::NoopEsmClient,
+            );
+
+            run_app(event_repo, agg_repo, sn_repo, pool_service, app_config).await
         }
         other => {
             #[cfg(not(feature = "enterprise-arango"))]
@@ -106,21 +122,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn run_app<E, A, S>(
+async fn run_app<E, A, S, P, C>(
     event_repo: E,
     agg_repo: A,
     sn_repo: S,
+    pool_service: PoolService<P, C>,
     app_config: AppConfig,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     E: EventRepository + Clone + 'static,
     A: AggregationRepository + Clone + 'static,
     S: SerialNumberRepository + Clone + 'static,
+    P: PoolRepository + 'static,
+    C: EsmClient + 'static,
 {
     let state = Arc::new(AppState {
         event_repo: event_repo.clone(),
         agg_repo: agg_repo.clone(),
         sn_service: SerialNumberService::new(sn_repo.clone()),
+        pool_service,
     });
 
     // Build API router
