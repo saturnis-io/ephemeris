@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 pub mod routes;
 pub mod state;
 
@@ -8,50 +10,84 @@ use axum::routing::{get, post};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
-use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
+use ephemeris_core::repository::{
+    AggregationRepository, EsmClient, EventRepository, PoolRepository, SerialNumberRepository,
+};
 
-use crate::routes::{events, health, hierarchy, serial_numbers};
+use crate::routes::{events, health, hierarchy, pools, serial_numbers};
 pub use crate::state::AppState;
 
 /// Build the Axum router with all API routes.
-pub fn create_router<E, A, S>(state: Arc<AppState<E, A, S>>) -> Router
+pub fn create_router<E, A, S, P, C>(state: Arc<AppState<E, A, S, P, C>>) -> Router
 where
     E: EventRepository + 'static,
     A: AggregationRepository + 'static,
     S: SerialNumberRepository + 'static,
+    P: PoolRepository + 'static,
+    C: EsmClient + 'static,
 {
     Router::new()
         .route("/health", get(health::health_check))
-        .route("/events", get(events::query_events::<E, A, S>))
-        .route("/events", post(events::capture_event::<E, A, S>))
-        .route("/events/{event_id}", get(events::get_event::<E, A, S>))
+        .route("/events", get(events::query_events::<E, A, S, P, C>))
+        .route("/events", post(events::capture_event::<E, A, S, P, C>))
+        .route(
+            "/events/{event_id}",
+            get(events::get_event::<E, A, S, P, C>),
+        )
         .route(
             "/hierarchy/{epc}",
-            get(hierarchy::get_full_hierarchy::<E, A, S>),
+            get(hierarchy::get_full_hierarchy::<E, A, S, P, C>),
         )
         .route(
             "/hierarchy/{epc}/children",
-            get(hierarchy::get_children::<E, A, S>),
+            get(hierarchy::get_children::<E, A, S, P, C>),
         )
         .route(
             "/hierarchy/{epc}/ancestors",
-            get(hierarchy::get_ancestors::<E, A, S>),
+            get(hierarchy::get_ancestors::<E, A, S, P, C>),
         )
         .route(
             "/serial-numbers",
-            get(serial_numbers::query_serial_numbers::<E, A, S>),
+            get(serial_numbers::query_serial_numbers::<E, A, S, P, C>),
         )
         .route(
             "/serial-numbers/{epc}",
-            get(serial_numbers::get_sn_state::<E, A, S>),
+            get(serial_numbers::get_sn_state::<E, A, S, P, C>),
         )
         .route(
             "/serial-numbers/{epc}/history",
-            get(serial_numbers::get_sn_history::<E, A, S>),
+            get(serial_numbers::get_sn_history::<E, A, S, P, C>),
         )
         .route(
             "/serial-numbers/{epc}/transition",
-            post(serial_numbers::manual_transition::<E, A, S>),
+            post(serial_numbers::manual_transition::<E, A, S, P, C>),
+        )
+        .route("/pools", post(pools::create_pool::<E, A, S, P, C>))
+        .route("/pools", get(pools::list_pools::<E, A, S, P, C>))
+        .route("/pools/{id}", get(pools::get_pool::<E, A, S, P, C>))
+        .route(
+            "/pools/{id}",
+            axum::routing::delete(pools::delete_pool::<E, A, S, P, C>),
+        )
+        .route(
+            "/pools/{id}/request",
+            post(pools::request_numbers::<E, A, S, P, C>),
+        )
+        .route(
+            "/pools/{id}/return",
+            post(pools::return_numbers::<E, A, S, P, C>),
+        )
+        .route(
+            "/pools/{id}/receive",
+            post(pools::receive_numbers::<E, A, S, P, C>),
+        )
+        .route(
+            "/pools/{id}/request-upstream",
+            post(pools::request_upstream::<E, A, S, P, C>),
+        )
+        .route(
+            "/pools/{id}/return-upstream",
+            post(pools::return_upstream::<E, A, S, P, C>),
         )
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
@@ -65,11 +101,11 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use ephemeris_core::domain::{
-        AggregationTree, Epc, EpcisEvent, EventId, EventQuery, SerialNumber, SerialNumberQuery,
-        SnState, SnTransition,
+        AggregationTree, Epc, EpcisEvent, EventId, EventQuery, PoolId, PoolQuery, PoolStats,
+        SerialNumber, SerialNumberPool, SerialNumberQuery, SnState, SnTransition,
     };
     use ephemeris_core::error::RepoError;
-    use ephemeris_core::service::SerialNumberService;
+    use ephemeris_core::service::{NoopEsmClient, PoolService, SerialNumberService};
     use tower::ServiceExt;
 
     struct StubEventRepo;
@@ -196,13 +232,88 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn health_endpoint_returns_ok() {
-        let state = Arc::new(AppState {
+    /// Stub PoolRepository for test AppState construction.
+    struct StubPoolRepo;
+
+    impl ephemeris_core::repository::PoolRepository for StubPoolRepo {
+        async fn create_pool(&self, pool: &SerialNumberPool) -> Result<PoolId, RepoError> {
+            Ok(pool.id.clone())
+        }
+
+        async fn get_pool(&self, _id: &PoolId) -> Result<Option<SerialNumberPool>, RepoError> {
+            Ok(None)
+        }
+
+        async fn list_pools(
+            &self,
+            _filter: &PoolQuery,
+        ) -> Result<Vec<SerialNumberPool>, RepoError> {
+            Ok(vec![])
+        }
+
+        async fn delete_pool(&self, _id: &PoolId) -> Result<(), RepoError> {
+            Ok(())
+        }
+
+        async fn assign_to_pool(
+            &self,
+            _pool_id: &PoolId,
+            epcs: &[Epc],
+            _initial_state: Option<&str>,
+        ) -> Result<u32, RepoError> {
+            Ok(epcs.len() as u32)
+        }
+
+        async fn request_numbers(
+            &self,
+            _pool_id: &PoolId,
+            _count: u32,
+        ) -> Result<Vec<Epc>, RepoError> {
+            Ok(vec![])
+        }
+
+        async fn return_numbers(&self, _pool_id: &PoolId, epcs: &[Epc]) -> Result<u32, RepoError> {
+            Ok(epcs.len() as u32)
+        }
+
+        async fn get_pool_stats(&self, pool_id: &PoolId) -> Result<PoolStats, RepoError> {
+            Ok(PoolStats {
+                pool_id: pool_id.clone(),
+                total: 0,
+                unassigned: 0,
+                unallocated: 0,
+                allocated: 0,
+                encoded: 0,
+                commissioned: 0,
+                other: 0,
+            })
+        }
+    }
+
+    fn make_test_state()
+    -> Arc<AppState<StubEventRepo, StubAggRepo, StubSnRepo, StubPoolRepo, NoopEsmClient>> {
+        Arc::new(AppState {
             event_repo: StubEventRepo,
             agg_repo: StubAggRepo,
             sn_service: SerialNumberService::new(StubSnRepo::new()),
-        });
+            pool_service: PoolService::new(StubPoolRepo, NoopEsmClient),
+        })
+    }
+
+    fn make_test_state_with_sn_repo(
+        sn_repo: StubSnRepo,
+    ) -> Arc<AppState<StubEventRepo, StubAggRepo, StubSnRepo, StubPoolRepo, NoopEsmClient>> {
+        Arc::new(AppState {
+            event_repo: StubEventRepo,
+            agg_repo: StubAggRepo,
+            sn_service: SerialNumberService::new(sn_repo),
+            pool_service: PoolService::new(StubPoolRepo, NoopEsmClient),
+        })
+    }
+
+    #[tokio::test]
+    async fn health_endpoint_returns_ok() {
+        let state = make_test_state();
         let app = create_router(state);
 
         let response = app
@@ -226,11 +337,7 @@ mod tests {
 
     #[tokio::test]
     async fn sn_not_found_returns_404() {
-        let state = Arc::new(AppState {
-            event_repo: StubEventRepo,
-            agg_repo: StubAggRepo,
-            sn_service: SerialNumberService::new(StubSnRepo::new()),
-        });
+        let state = make_test_state();
         let app = create_router(state);
 
         let response = app
@@ -269,11 +376,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state = Arc::new(AppState {
-            event_repo: StubEventRepo,
-            agg_repo: StubAggRepo,
-            sn_service: SerialNumberService::new(sn_repo),
-        });
+        let state = make_test_state_with_sn_repo(sn_repo);
         let app = create_router(state);
 
         let response = app
@@ -314,11 +417,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state = Arc::new(AppState {
-            event_repo: StubEventRepo,
-            agg_repo: StubAggRepo,
-            sn_service: SerialNumberService::new(sn_repo),
-        });
+        let state = make_test_state_with_sn_repo(sn_repo);
         let app = create_router(state);
 
         let response = app
@@ -354,11 +453,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state = Arc::new(AppState {
-            event_repo: StubEventRepo,
-            agg_repo: StubAggRepo,
-            sn_service: SerialNumberService::new(sn_repo),
-        });
+        let state = make_test_state_with_sn_repo(sn_repo);
         let app = create_router(state);
 
         let response = app

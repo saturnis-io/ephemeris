@@ -7,7 +7,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use ephemeris_core::domain::{Epc, SerialNumberQuery, SnState};
-use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
+use ephemeris_core::repository::{
+    AggregationRepository, EsmClient, EventRepository, PoolRepository, SerialNumberRepository,
+};
 
 /// Query parameters for history pagination.
 #[derive(Deserialize)]
@@ -22,8 +24,10 @@ pub async fn get_sn_state<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Path(epc): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let epc = Epc::new(epc);
@@ -48,8 +52,10 @@ pub async fn get_sn_history<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Path(epc): Path<String>,
     Query(params): Query<HistoryParams>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
@@ -74,8 +80,10 @@ pub async fn query_serial_numbers<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Query(query): Query<SerialNumberQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     state
@@ -108,8 +116,10 @@ pub async fn manual_transition<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Path(epc): Path<String>,
     Json(req): Json<TransitionRequest>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {

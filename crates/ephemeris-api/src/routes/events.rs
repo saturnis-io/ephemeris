@@ -7,7 +7,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use ephemeris_core::domain::{Action, Epc, EpcisEvent, EventId, EventQuery, TransitionSource};
-use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
+use ephemeris_core::repository::{
+    AggregationRepository, EsmClient, EventRepository, PoolRepository, SerialNumberRepository,
+};
 
 use crate::state::AppState;
 
@@ -16,8 +18,10 @@ pub async fn query_events<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<Vec<EpcisEvent>>, (StatusCode, Json<Value>)> {
     state
@@ -35,8 +39,14 @@ pub async fn query_events<
 }
 
 /// GET /events/:event_id — retrieve a single event by UUID.
-pub async fn get_event<E: EventRepository, A: AggregationRepository, S: SerialNumberRepository>(
-    State(state): State<Arc<AppState<E, A, S>>>,
+pub async fn get_event<
+    E: EventRepository,
+    A: AggregationRepository,
+    S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
+>(
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Path(event_id): Path<Uuid>,
 ) -> Result<Json<EpcisEvent>, (StatusCode, Json<Value>)> {
     let id = EventId(event_id);
@@ -64,8 +74,10 @@ pub async fn capture_event<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Json(event): Json<EpcisEvent>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
     let stored_id = state.event_repo.store_event(&event).await.map_err(|e| {

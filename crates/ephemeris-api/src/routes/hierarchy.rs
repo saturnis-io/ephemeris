@@ -6,7 +6,9 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 
 use ephemeris_core::domain::{AggregationTree, Epc};
-use ephemeris_core::repository::{AggregationRepository, EventRepository, SerialNumberRepository};
+use ephemeris_core::repository::{
+    AggregationRepository, EsmClient, EventRepository, PoolRepository, SerialNumberRepository,
+};
 
 use crate::state::AppState;
 
@@ -15,8 +17,10 @@ pub async fn get_full_hierarchy<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Path(epc): Path<String>,
 ) -> Result<Json<AggregationTree>, (StatusCode, Json<Value>)> {
     let epc = Epc::new(epc);
@@ -39,8 +43,10 @@ pub async fn get_children<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Path(epc): Path<String>,
 ) -> Result<Json<Vec<Epc>>, (StatusCode, Json<Value>)> {
     let epc = Epc::new(epc);
@@ -63,8 +69,10 @@ pub async fn get_ancestors<
     E: EventRepository,
     A: AggregationRepository,
     S: SerialNumberRepository,
+    P: PoolRepository,
+    C: EsmClient,
 >(
-    State(state): State<Arc<AppState<E, A, S>>>,
+    State(state): State<Arc<AppState<E, A, S, P, C>>>,
     Path(epc): Path<String>,
 ) -> Result<Json<Vec<Epc>>, (StatusCode, Json<Value>)> {
     let epc = Epc::new(epc);
