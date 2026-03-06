@@ -477,4 +477,89 @@ mod tests {
         let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(result["state"], "destroyed");
     }
+
+    #[tokio::test]
+    async fn create_pool_returns_201() {
+        let state = make_test_state();
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/pools")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"name": "Test Pool", "sidClass": "sgtin"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["poolId"].is_string(), "response should contain poolId string");
+    }
+
+    #[tokio::test]
+    async fn list_pools_returns_200() {
+        let state = make_test_state();
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/pools")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn get_pool_not_found_returns_404() {
+        let state = make_test_state();
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/pools/00000000-0000-0000-0000-000000000001")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn request_upstream_without_esm_returns_503() {
+        let state = make_test_state();
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/pools/00000000-0000-0000-0000-000000000001/request-upstream")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"count": 10, "criteria": {"criteria": []}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
 }
