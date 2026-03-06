@@ -224,6 +224,7 @@ function Stop-Ephemeris {
 
 # --- Test Commands --------------------------------------------------------
 $ApiBase = "http://localhost:8080"
+$script:LastPoolId = $null
 
 function Test-HealthCheck {
     Write-Header "Health Check"
@@ -435,23 +436,149 @@ function Run-FullPipelineDemo {
     }
 }
 
+# --- Pool Management ------------------------------------------------------
+
+function Create-Pool {
+    Write-Header "Create Serial Number Pool"
+
+    $gtin = "06141410$(Get-Random -Minimum 100000 -Maximum 999999)"
+    $body = @"
+{
+    "name": "Test Pool $gtin",
+    "sidClass": "sgtin",
+    "criteria": [["gtin", "$gtin"]]
+}
+"@
+
+    Write-Info "GTIN: $gtin"
+    $resp = $body | curl.exe -s -X POST "$ApiBase/pools" -H "Content-Type: application/json" -d "@-"
+    $parsed = $resp | ConvertFrom-Json
+    if ($parsed.id) {
+        $script:LastPoolId = $parsed.id
+        Write-Step "Pool created: $($parsed.id)"
+        Write-Info "Name: $($parsed.name)"
+        Write-Info "(saved as LastPoolId for subsequent operations)"
+    } else {
+        Write-Err "Response: $resp"
+    }
+}
+
+function Receive-Numbers {
+    Write-Header "Receive Serial Numbers into Pool"
+
+    $poolId = $script:LastPoolId
+    if (-not $poolId) {
+        $poolId = Read-Host "  Enter pool ID (no LastPoolId set)"
+        if (-not $poolId) { Write-Warn "Cancelled"; return }
+    }
+    Write-Info "Pool: $poolId"
+
+    $epcs = @()
+    for ($i = 0; $i -lt 5; $i++) {
+        $serial = Get-Random -Minimum 100000000 -Maximum 999999999
+        $epcs += "urn:epc:id:sgtin:0614141.107346.$serial"
+    }
+
+    $epcJson = ($epcs | ForEach-Object { "`"$_`"" }) -join ", "
+    $body = @"
+{
+    "serialNumbers": [$epcJson],
+    "sidClass": "sgtin",
+    "initialState": "unallocated"
+}
+"@
+
+    Write-Info "Receiving 5 serial numbers..."
+    foreach ($e in $epcs) { Write-Info "  $e" }
+
+    $resp = $body | curl.exe -s -X POST "$ApiBase/pools/$poolId/receive" -H "Content-Type: application/json" -d "@-"
+    Write-Step "Response: $resp"
+}
+
+function Request-Numbers {
+    Write-Header "Request Serial Numbers from Pool"
+
+    $poolId = $script:LastPoolId
+    if (-not $poolId) {
+        $poolId = Read-Host "  Enter pool ID (no LastPoolId set)"
+        if (-not $poolId) { Write-Warn "Cancelled"; return }
+    }
+    Write-Info "Pool: $poolId"
+
+    $body = @"
+{
+    "count": 3,
+    "criteria": { "criteria": [] }
+}
+"@
+
+    Write-Info "Requesting 3 serial numbers..."
+    $resp = $body | curl.exe -s -X POST "$ApiBase/pools/$poolId/request" -H "Content-Type: application/json" -d "@-"
+    $parsed = $resp | ConvertFrom-Json
+    if ($parsed.serial_numbers) {
+        Write-Step "Fulfilled: $($parsed.fulfilled) / $($parsed.requested)"
+        foreach ($sn in $parsed.serial_numbers) {
+            Write-Info "  $($sn.value)"
+        }
+    } else {
+        Write-Step "Response: $resp"
+    }
+}
+
+function Get-PoolStats {
+    Write-Header "Pool Details & Stats"
+
+    $poolId = $script:LastPoolId
+    if (-not $poolId) {
+        $poolId = Read-Host "  Enter pool ID (no LastPoolId set)"
+        if (-not $poolId) { Write-Warn "Cancelled"; return }
+    }
+    Write-Info "Pool: $poolId"
+
+    $resp = curl.exe -s "$ApiBase/pools/$poolId"
+    $parsed = $resp | ConvertFrom-Json
+    if ($parsed.pool) {
+        $pool = $parsed.pool
+        Write-Step "Name: $($pool.name)"
+        Write-Info "SID Class: $($pool.sid_class)"
+        Write-Info "Created: $($pool.created_at)"
+        $stats = $parsed.stats
+        Write-Step "Stats:"
+        Write-Info "  Total:        $($stats.total)"
+        Write-Info "  Unassigned:   $($stats.unassigned)"
+        Write-Info "  Unallocated:  $($stats.unallocated)"
+        Write-Info "  Allocated:    $($stats.allocated)"
+        Write-Info "  Encoded:      $($stats.encoded)"
+        Write-Info "  Commissioned: $($stats.commissioned)"
+        Write-Info "  Other:        $($stats.other)"
+    } else {
+        Write-Step "Response: $resp"
+    }
+}
+
 # --- Interactive Menu -----------------------------------------------------
 function Show-Menu {
     Write-Host ""
-    Write-Host "  +---------------------------------------+" -ForegroundColor DarkCyan
-    Write-Host "  |      Ephemeris Test Console            |" -ForegroundColor DarkCyan
-    Write-Host "  +---------------------------------------+" -ForegroundColor DarkCyan
-    Write-Host "  |  1) Health check                      |" -ForegroundColor White
-    Write-Host "  |  2) Send ObjectEvent (commission)     |" -ForegroundColor White
-    Write-Host "  |  3) Send ObjectEvent (shipping)       |" -ForegroundColor White
-    Write-Host "  |  4) Send AggregationEvent (packing)   |" -ForegroundColor White
-    Write-Host "  |  5) Manual state override             |" -ForegroundColor White
-    Write-Host "  |  6) Query all events                  |" -ForegroundColor White
-    Write-Host "  |  7) Query serial numbers              |" -ForegroundColor White
-    Write-Host "  |  8) Send event via MQTT               |" -ForegroundColor White
-    Write-Host "  |  9) Run full pipeline demo            |" -ForegroundColor Yellow
-    Write-Host "  |  0) Quit                              |" -ForegroundColor White
-    Write-Host "  +---------------------------------------+" -ForegroundColor DarkCyan
+    Write-Host "  +------------------------------------------+" -ForegroundColor DarkCyan
+    Write-Host "  |       Ephemeris Test Console              |" -ForegroundColor DarkCyan
+    Write-Host "  +------------------------------------------+" -ForegroundColor DarkCyan
+    Write-Host "  |  1) Health check                         |" -ForegroundColor White
+    Write-Host "  |  2) Send ObjectEvent (commission)        |" -ForegroundColor White
+    Write-Host "  |  3) Send ObjectEvent (shipping)          |" -ForegroundColor White
+    Write-Host "  |  4) Send AggregationEvent (packing)      |" -ForegroundColor White
+    Write-Host "  |  5) Manual state override                |" -ForegroundColor White
+    Write-Host "  |  6) Query all events                     |" -ForegroundColor White
+    Write-Host "  |  7) Query serial numbers                 |" -ForegroundColor White
+    Write-Host "  |  8) Send event via MQTT                  |" -ForegroundColor White
+    Write-Host "  |  9) Run full pipeline demo               |" -ForegroundColor Yellow
+    Write-Host "  | ---- Pool Management ------------------- |" -ForegroundColor DarkCyan
+    Write-Host "  | 10) Create pool                          |" -ForegroundColor White
+    Write-Host "  | 11) Receive SNs into pool                |" -ForegroundColor White
+    Write-Host "  | 12) Request SNs from pool                |" -ForegroundColor White
+    Write-Host "  | 13) View pool stats                      |" -ForegroundColor White
+    Write-Host "  +------------------------------------------+" -ForegroundColor DarkCyan
+    Write-Host "  |  0) Quit                                 |" -ForegroundColor White
+    Write-Host "  +------------------------------------------+" -ForegroundColor DarkCyan
     Write-Host ""
 }
 
@@ -485,19 +612,23 @@ function Main {
         $quit = $false
         while (-not $quit) {
             Show-Menu
-            $choice = Read-Host "  Choose [1-9, 0 to quit]"
+            $choice = Read-Host "  Choose [1-13, 0 to quit]"
 
             switch ($choice) {
-                "1" { Test-HealthCheck }
-                "2" { Send-ObjectEvent | Out-Null }
-                "3" { Send-ShippingEvent }
-                "4" { Send-AggregationEvent | Out-Null }
-                "5" { Send-ManualOverride }
-                "6" { Query-Events }
-                "7" { Query-SerialNumbers }
-                "8" { Send-MqttEvent }
-                "9" { Run-FullPipelineDemo }
-                "0" { $quit = $true }
+                "1"  { Test-HealthCheck }
+                "2"  { Send-ObjectEvent | Out-Null }
+                "3"  { Send-ShippingEvent }
+                "4"  { Send-AggregationEvent | Out-Null }
+                "5"  { Send-ManualOverride }
+                "6"  { Query-Events }
+                "7"  { Query-SerialNumbers }
+                "8"  { Send-MqttEvent }
+                "9"  { Run-FullPipelineDemo }
+                "10" { Create-Pool }
+                "11" { Receive-Numbers }
+                "12" { Request-Numbers }
+                "13" { Get-PoolStats }
+                "0"  { $quit = $true }
                 default { Write-Warn "Invalid choice" }
             }
         }
