@@ -21,3 +21,22 @@ pub enum RepoError {
     #[error("internal error: {0}")]
     Internal(String),
 }
+
+/// Errors from upstream ESM communication.
+#[derive(Error, Debug)]
+pub enum EsmError {
+    #[error("ESM not configured")]
+    NotConfigured,
+
+    #[error("ESM connection failed: {0}")]
+    Connection(String),
+
+    #[error("ESM request failed: {status} {body}")]
+    Request { status: u16, body: String },
+
+    #[error("ESM response parse error: {0}")]
+    Parse(String),
+
+    #[error("ESM timeout: {0}")]
+    Timeout(String),
+}
