@@ -489,9 +489,7 @@ mod tests {
                     .method("POST")
                     .uri("/pools")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"name": "Test Pool", "sidClass": "sgtin"}"#,
-                    ))
+                    .body(Body::from(r#"{"name": "Test Pool", "sidClass": "sgtin"}"#))
                     .unwrap(),
             )
             .await
@@ -502,7 +500,10 @@ mod tests {
             .await
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(json["poolId"].is_string(), "response should contain poolId string");
+        assert!(
+            json["poolId"].is_string(),
+            "response should contain poolId string"
+        );
     }
 
     #[tokio::test]
@@ -552,9 +553,7 @@ mod tests {
                     .method("POST")
                     .uri("/pools/00000000-0000-0000-0000-000000000001/request-upstream")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"count": 10, "criteria": {"criteria": []}}"#,
-                    ))
+                    .body(Body::from(r#"{"count": 10, "criteria": {"criteria": []}}"#))
                     .unwrap(),
             )
             .await

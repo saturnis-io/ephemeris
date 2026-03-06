@@ -8,15 +8,15 @@ use crate::error::EsmError;
 /// depend on reqwest or any HTTP client.
 #[trait_variant::make(Send)]
 pub trait EsmClient: Sync {
-	/// Request unassigned serial numbers from the upstream ESM.
-	/// OPEN-SCS PSS §7.2: ESM allocates SNs → SSM stores as Unallocated.
-	async fn request_unassigned(
-		&self,
-		count: u32,
-		criteria: &PoolSelectionCriteria,
-	) -> Result<Vec<Epc>, EsmError>;
+    /// Request unassigned serial numbers from the upstream ESM.
+    /// OPEN-SCS PSS §7.2: ESM allocates SNs → SSM stores as Unallocated.
+    async fn request_unassigned(
+        &self,
+        count: u32,
+        criteria: &PoolSelectionCriteria,
+    ) -> Result<Vec<Epc>, EsmError>;
 
-	/// Return unallocated serial numbers back to the upstream ESM.
-	/// OPEN-SCS PSS §7.5: SSM returns unused SNs → ESM marks as Unassigned.
-	async fn return_unallocated(&self, epcs: &[Epc]) -> Result<u32, EsmError>;
+    /// Return unallocated serial numbers back to the upstream ESM.
+    /// OPEN-SCS PSS §7.5: SSM returns unused SNs → ESM marks as Unassigned.
+    async fn return_unallocated(&self, epcs: &[Epc]) -> Result<u32, EsmError>;
 }

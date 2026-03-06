@@ -1,7 +1,8 @@
 /// SQL to initialize the Ephemeris schema.
-/// Requires the ltree extension.
+/// Requires the ltree and pgcrypto extensions.
 pub const INIT_SCHEMA: &str = r#"
 CREATE EXTENSION IF NOT EXISTS ltree;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- EPCIS Event Ledger (Write model)
 CREATE TABLE IF NOT EXISTS epcis_events (

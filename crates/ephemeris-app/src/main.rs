@@ -52,10 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let pool_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
             let pool_repo = ephemeris_pg::PgPoolRepository::new(pool_pool);
-            let pool_service = PoolService::new(
-                pool_repo,
-                ephemeris_core::service::NoopEsmClient,
-            );
+            let pool_service = PoolService::new(pool_repo, ephemeris_core::service::NoopEsmClient);
 
             run_app(event_repo, agg_repo, sn_repo, pool_service, app_config).await
         }
@@ -100,10 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let pool_pool = build_pg_pool(&conn_str, pg_cfg.pool_size)?;
             let pool_repo = ephemeris_pg::PgPoolRepository::new(pool_pool);
-            let pool_service = PoolService::new(
-                pool_repo,
-                ephemeris_core::service::NoopEsmClient,
-            );
+            let pool_service = PoolService::new(pool_repo, ephemeris_core::service::NoopEsmClient);
 
             run_app(event_repo, agg_repo, sn_repo, pool_service, app_config).await
         }
