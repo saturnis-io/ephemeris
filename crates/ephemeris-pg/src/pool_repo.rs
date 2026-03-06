@@ -334,13 +334,41 @@ impl PoolRepository for PgPoolRepository {
         let result = client
             .execute(
                 "UPDATE serial_numbers SET state = 'unallocated', updated_at = now()
-                 WHERE epc = ANY($1) AND pool_id = $2",
+                 WHERE epc = ANY($1) AND pool_id = $2 AND state = 'allocated'",
                 &[&epc_strings, &pool_id_str],
             )
             .await
             .map_err(|e| RepoError::Query(e.to_string()))?;
 
-        Ok(result as u32)
+        let updated = result as u32;
+        let requested = epcs.len() as u32;
+
+        if updated == 0 && requested > 0 {
+            // Check if the SNs exist but aren't in the right pool/state
+            let check = client
+                .query(
+                    "SELECT epc, state, pool_id FROM serial_numbers WHERE epc = ANY($1) LIMIT 1",
+                    &[&epc_strings],
+                )
+                .await
+                .map_err(|e| RepoError::Query(e.to_string()))?;
+
+            if let Some(row) = check.first() {
+                let epc: &str = row.get(0);
+                let state: &str = row.get(1);
+                let sn_pool: Option<&str> = row.get(2);
+                if sn_pool != Some(&pool_id_str) {
+                    return Err(RepoError::Query(format!(
+                        "serial number {epc} does not belong to pool {pool_id_str}"
+                    )));
+                }
+                return Err(RepoError::Query(format!(
+                    "serial number {epc} is in state '{state}', not 'allocated'"
+                )));
+            }
+        }
+
+        Ok(updated)
     }
 
     async fn get_pool_stats(&self, pool_id: &PoolId) -> Result<PoolStats, RepoError> {
@@ -604,6 +632,56 @@ mod tests {
         // Request 10 — should only get 2 (no error)
         let allocated = repo.request_numbers(&id, 10).await.unwrap();
         assert_eq!(allocated.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_return_rejects_wrong_state() {
+        let (repo, sn_repo, _container) = setup_test_db().await;
+
+        let pool = make_pool("State Guard Pool", None);
+        let id = repo.create_pool(&pool).await.unwrap();
+
+        // Create a commissioned SN (not allocated)
+        let epc = Epc::new("urn:epc:id:sgtin:0614141.107346.SG01");
+        sn_repo
+            .upsert_state(&epc, SnState::Commissioned, None, Some(&id.0.to_string()))
+            .await
+            .unwrap();
+
+        // Return should fail — SN is commissioned, not allocated
+        let result = repo.return_numbers(&id, &[epc]).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("commissioned"),
+            "error should mention current state, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_return_rejects_wrong_pool() {
+        let (repo, sn_repo, _container) = setup_test_db().await;
+
+        let pool_a = make_pool("Pool A", None);
+        let pool_b = make_pool("Pool B", None);
+        let id_a = repo.create_pool(&pool_a).await.unwrap();
+        let id_b = repo.create_pool(&pool_b).await.unwrap();
+
+        // Create an allocated SN in pool A
+        let epc = Epc::new("urn:epc:id:sgtin:0614141.107346.WP01");
+        sn_repo
+            .upsert_state(&epc, SnState::Allocated, None, Some(&id_a.0.to_string()))
+            .await
+            .unwrap();
+
+        // Try to return it to pool B — should fail
+        let result = repo.return_numbers(&id_b, &[epc]).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("does not belong"),
+            "error should mention wrong pool, got: {err}"
+        );
     }
 
     #[tokio::test]

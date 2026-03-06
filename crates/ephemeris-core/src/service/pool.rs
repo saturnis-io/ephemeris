@@ -1,5 +1,8 @@
+use std::str::FromStr;
+
 use crate::domain::{
     Epc, PoolId, PoolQuery, PoolResponse, PoolSelectionCriteria, PoolStats, SerialNumberPool,
+    SnState,
 };
 use crate::error::{EsmError, RepoError};
 use crate::repository::{EsmClient, PoolRepository};
@@ -67,6 +70,8 @@ impl<P: PoolRepository, C: EsmClient> PoolService<P, C> {
     }
 
     /// Receive serial numbers into a pool (e.g., from an ESM or manual import).
+    ///
+    /// Validates `initial_state` against the `SnState` enum if provided.
     pub async fn receive_numbers(
         &self,
         pool_id: &PoolId,
@@ -74,6 +79,11 @@ impl<P: PoolRepository, C: EsmClient> PoolService<P, C> {
         _sid_class: Option<&str>,
         initial_state: Option<&str>,
     ) -> Result<u32, RepoError> {
+        if let Some(state_str) = initial_state {
+            SnState::from_str(state_str)
+                .map_err(|_| RepoError::Query(format!("invalid initial_state: '{state_str}'")))?;
+        }
+
         self.pool_repo
             .assign_to_pool(pool_id, epcs, initial_state)
             .await
@@ -114,13 +124,17 @@ impl<P: PoolRepository, C: EsmClient> PoolService<P, C> {
     ///
     /// OPEN-SCS flow: SSM returns unused SNs → ESM marks as Unassigned,
     /// then we remove them from the local pool.
+    ///
+    /// Ordering: local state change first (retryable), then ESM call (commit step).
+    /// If the ESM call fails, local state is already rolled back to unallocated
+    /// which is safe — the SNs remain in the local pool for retry.
     pub async fn return_upstream(&self, pool_id: &PoolId, epcs: &[Epc]) -> Result<u32, EsmError> {
-        let count = self.esm_client.return_unallocated(epcs).await?;
-
         self.pool_repo
             .return_numbers(pool_id, epcs)
             .await
             .map_err(|e| EsmError::Connection(e.to_string()))?;
+
+        let count = self.esm_client.return_unallocated(epcs).await?;
 
         Ok(count)
     }
@@ -370,5 +384,36 @@ mod tests {
 
         let count = service.return_upstream(&pool_id, &epcs).await.unwrap();
         assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_receive_rejects_invalid_initial_state() {
+        let pool = make_pool();
+        let pool_id = pool.id.clone();
+        let epcs = make_epcs(2);
+        let repo = StubPoolRepo::with_pool(pool);
+        let service = PoolService::new(repo, StubEsmClient);
+
+        let result = service
+            .receive_numbers(&pool_id, &epcs, None, Some("GARBAGE"))
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("invalid initial_state"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_receive_accepts_valid_initial_state() {
+        let pool = make_pool();
+        let pool_id = pool.id.clone();
+        let epcs = make_epcs(2);
+        let repo = StubPoolRepo::with_pool(pool);
+        let service = PoolService::new(repo, StubEsmClient);
+
+        let count = service
+            .receive_numbers(&pool_id, &epcs, None, Some("unallocated"))
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
     }
 }
