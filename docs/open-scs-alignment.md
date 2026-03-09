@@ -2,7 +2,7 @@
 
 **Standard:** OPEN-SCS Packaging Serialization Specification (PSS) Version 1 (OPC Foundation, 2019-03-18)
 
-**Source documents:** `.internal/OPEN-SCS-Specification-FINAL.pdf` (54pp), `.internal/OPEN-SCS-Use-Cases-FINAL.pdf` (26pp)
+**Source documents:** [OPEN-SCS Packaging Serialization Specification (PSS) Version 1](https://opcfoundation.org/developer-tools/documents/view/165) (OPC Foundation, 2019) and the accompanying OPEN-SCS Use Cases document.
 
 ---
 

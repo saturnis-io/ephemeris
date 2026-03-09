@@ -3,3 +3,16 @@
 *.swo
 .env
 *.log
+
+# AI assistant config
+CLAUDE.md
+AGENTS.md
+.claude/
+.knowledge/
+.gitnexus
+
+# Internal dev tracking
+tasks/
+
+# Internal reference documents
+.internal/
