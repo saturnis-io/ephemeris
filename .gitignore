@@ -16,3 +16,6 @@ tasks/
 
 # Internal reference documents
 .internal/
+.company/
+.planning/
+.vault/
