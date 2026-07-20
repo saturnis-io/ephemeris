@@ -9,17 +9,17 @@
 
 ## Overview
 
-Ephemeris is a serialization engine that tracks products from serial number birth through supply chain handoff. It operates as a **Site Serialization Manager (SSM)** at ISA-95 Level 3 -- receiving serial number allocations from enterprise systems, ingesting line events via MQTT, and exposing a standards-compliant query interface.
+Ephemeris is a serialization engine that tracks products from serial number birth through supply chain handoff. It operates as a Site Serialization Manager (SSM) at ISA-95 Level 3: it receives serial number allocations from enterprise systems, ingests line events via MQTT, and exposes an EPCIS 2.0 query interface.
 
-**Core capabilities:**
+Core capabilities:
 
-- **MQTT ingestion** -- receives events from packaging line controllers (PLCs, scanners, label printers) via MQTT topics
-- **CQRS architecture** -- immutable event ledger (write path) separated from aggregation hierarchy (read path)
-- **EPCIS 2.0 query interface** -- REST API implementing the GS1 EPCIS 2.0 standard for supply chain visibility
-- **OPEN-SCS alignment** -- serial number lifecycle management aligned with the OPC Foundation's Packaging Serialization Specification
-- **PostgreSQL storage** -- JSONB event store with ltree-based aggregation hierarchy (open core)
+- MQTT ingestion from packaging line controllers (PLCs, scanners, label printers)
+- CQRS architecture with an immutable event ledger (write path) separated from the aggregation hierarchy (read path)
+- REST API implementing the GS1 EPCIS 2.0 query standard for supply chain visibility
+- Serial number lifecycle management aligned with the OPC Foundation's Packaging Serialization Specification (OPEN-SCS)
+- PostgreSQL storage combining a JSONB event store with an ltree aggregation hierarchy (open core)
 
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
@@ -83,7 +83,7 @@ Packaging Lines (LSM)         Enterprise (ESM)
    (Tier 1)       (Tier 2)
 ```
 
-## Open Core vs Enterprise
+## Open core vs enterprise
 
 | Capability | Open Core | Enterprise |
 |---|:---:|:---:|
@@ -102,9 +102,9 @@ Enterprise connectors are compiled behind Cargo feature flags. The default build
 
 Ephemeris uses a layered configuration system with the following priority (highest first):
 
-1. **CLI flags** -- `--database-backend postgres`
-2. **Environment variables** -- `EPHEMERIS_MQTT__BROKER_URL=mqtt://broker:1883`
-3. **Config file** -- `ephemeris.toml`
+1. CLI flags: `--database-backend postgres`
+2. Environment variables: `EPHEMERIS_MQTT__BROKER_URL=mqtt://broker:1883`
+3. Config file: `ephemeris.toml`
 
 See [`ephemeris.toml`](ephemeris.toml) for the full configuration reference with defaults.
 
@@ -124,7 +124,7 @@ cargo test --workspace --lib                          # Unit tests
 cargo test --workspace -- --test-threads=1            # Integration tests (sequential)
 ```
 
-Integration tests use [testcontainers](https://github.com/testcontainers/testcontainers-rs) to spin up PostgreSQL and MQTT broker instances automatically -- no manual Docker setup required for testing.
+Integration tests use [testcontainers](https://github.com/testcontainers/testcontainers-rs) to start PostgreSQL and an MQTT broker automatically, so you don't have to set up Docker containers by hand.
 
 ### Lint and format
 
@@ -138,10 +138,10 @@ cargo deny check licenses     # License audit
 
 Ephemeris aligns with two complementary industry standards:
 
-- **[OPEN-SCS PSS v1](https://opcfoundation.org/developer-tools/documents/view/165)** (OPC Foundation) -- covers the pre-commissioning lifecycle: serial number birth, pool management, label encoding, and commissioning
-- **[GS1 EPCIS 2.0](https://www.gs1.org/standards/epcis)** -- covers post-commissioning: shipping, receiving, aggregation, and supply chain visibility
+- [OPEN-SCS PSS v1](https://opcfoundation.org/developer-tools/documents/view/165) (OPC Foundation) covers the pre-commissioning lifecycle: serial number birth, pool management, label encoding, and commissioning
+- [GS1 EPCIS 2.0](https://www.gs1.org/standards/epcis) covers post-commissioning: shipping, receiving, aggregation, and supply chain visibility
 
-The handoff point between the two standards is **commissioning** -- the moment a serialized label is affixed to a physical product. See [`docs/open-scs-alignment.md`](docs/open-scs-alignment.md) for a detailed analysis.
+The handoff point between the two standards is **commissioning**, the moment a serialized label is affixed to a physical product. See [`docs/open-scs-alignment.md`](docs/open-scs-alignment.md) for a detailed analysis.
 
 ## Contributing
 

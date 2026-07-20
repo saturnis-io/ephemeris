@@ -15,7 +15,7 @@ OPEN-SCS and EPCIS 2.0 are complementary standards covering different halves of 
 | Pre-commissioning | OPEN-SCS PSS | SN birth → pool management → allocation → label printing → commissioning |
 | Post-commissioning | GS1 EPCIS 2.0 | Commissioning → shipping → receiving → aggregation → supply chain visibility |
 
-The handoff point is **commissioning** — the moment a label is affixed to a physical product. OPEN-SCS explicitly adopts GS1 CBV terminology for post-commissioning events (shipping, destroying, decommissioning, packing, unpacking all use `urn:epcglobal:cbv:bizstep:*` URIs).
+The handoff point is **commissioning**, the moment a label is affixed to a physical product. OPEN-SCS explicitly adopts GS1 CBV terminology for post-commissioning events (shipping, destroying, decommissioning, packing, unpacking all use `urn:epcglobal:cbv:bizstep:*` URIs).
 
 ## 2. ISA-95 Tier Mapping
 
@@ -23,7 +23,7 @@ OPEN-SCS defines three system roles:
 
 | OPEN-SCS Role | ISA-95 Level | Ephemeris Mapping |
 |---|---|---|
-| **ESM** (Enterprise Serialization Manager) | Level 4 | Corporate cloud / ERP — upstream of Ephemeris |
+| **ESM** (Enterprise Serialization Manager) | Level 4 | Corporate cloud / ERP, upstream of Ephemeris |
 | **SSM** (Site Serialization Manager) | Level 3 | **Ephemeris's deployment target** |
 | **LSM** (Line Serialization Manager) | Level 2 | Packaging line controllers publishing to MQTT |
 
@@ -100,17 +100,17 @@ Transitions (business steps):
 
 ### 4.2 Information Model (PSS §6)
 
-**SID Class** (§6.1) — Defines the format/standard for identifiers:
+**SID Class** (§6.1) defines the format/standard for identifiers:
 - SID Class ID, Owner, Description, Syntax Specification, Allowed Character Set, Intended Use
 - SID Class Properties (extensible key-value pairs)
 - Common classes: GS1 SGTIN, GS1 SSCC, IPI (Italy), CIP-13 (France)
 
-**Collection** (§6.2-6.3) — Batch containers for serial numbers:
+**Collection** (§6.2-6.3) defines batch containers for serial numbers:
 - Serial Number Collection: just the numbers (pre-print phase)
 - Label Collection: numbers + label properties (lot, expiry, manufactured date)
 - All SNs in a collection share the same state
 
-**Serial Number Pool** (§6.4) — Managed set of SNs with selection criteria:
+**Serial Number Pool** (§6.4) is a managed set of SNs with selection criteria:
 - Pool ID, associated SID Class
 - Pool Selection Criteria: product code, SID format, packaging level, etc.
 
@@ -119,16 +119,16 @@ Transitions (business steps):
 20 transaction types organized by pattern:
 
 **Pull transactions (request/response):**
-- Serial Number Request Unassigned (§7.2) — request new SNs from ESM
-- Serial Number Request Unallocated (§7.3) — request SNs from site pool
-- Serial Number Request Allocated (§7.4) — request SNs for a specific run
+- Serial Number Request Unassigned (§7.2): request new SNs from ESM
+- Serial Number Request Unallocated (§7.3): request SNs from site pool
+- Serial Number Request Allocated (§7.4): request SNs for a specific run
 
 **Push transactions (SN state changes):**
-- Serial Number Return Unallocated (§7.5) — return unused unallocated SNs
-- Serial Number Return Allocated (§7.6) — return unused allocated SNs
-- Serial Number to Unallocated (§7.7) — transition SNs to unallocated
-- Serial Number to Allocated (§7.8) — transition SNs to allocated
-- Serial Number to Encoded (§7.9) — transition SNs to encoded
+- Serial Number Return Unallocated (§7.5): return unused unallocated SNs
+- Serial Number Return Allocated (§7.6): return unused allocated SNs
+- Serial Number to Unallocated (§7.7): transition SNs to unallocated
+- Serial Number to Allocated (§7.8): transition SNs to allocated
+- Serial Number to Encoded (§7.9): transition SNs to encoded
 
 **Push transactions (event notifications):**
 - SN Invalidating Event (§7.10)
@@ -158,30 +158,30 @@ Transitions (business steps):
 
 ## 5. Recommended Feature Roadmap
 
-### Phase 1 — Serial Number Lifecycle (highest value)
+### Phase 1: Serial Number Lifecycle (highest value)
 - `SerialNumberState` enum (12 states from PSS §5)
 - `SerialNumberRepository` trait with state transition methods
 - PG: `serial_numbers` table with state, pool_id, timestamps
 - MQTT topics: `ephemeris/sn/+/state` for state change events
 - REST: `GET /serial-numbers/{epc}/state`, `GET /serial-numbers?state=commissioned`
 
-### Phase 2 — Pool Management
+### Phase 2: Pool Management
 - `SerialNumberPool` and `PoolSelectionCriteria` domain types
 - `PoolRepository` trait: create_pool, request_numbers, return_numbers
 - PG: `sn_pools` + `pool_criteria` tables
 - REST: `POST /pools`, `POST /pools/{id}/request`, `POST /pools/{id}/return`
 
-### Phase 3 — Label Events
+### Phase 3: Label Events
 - Extend MQTT handler to recognize OPEN-SCS URI prefixes
 - Route label events through state machine
 - Stored as events in `EventRepository` + state changes in `SerialNumberRepository`
 
-### Phase 4 — SID Class Validation (enterprise feature candidate)
+### Phase 4: SID Class Validation (enterprise feature candidate)
 - `SidClass` domain type with format validation rules
 - Validate incoming EPCs against expected SID class
 - Enterprise tier: open core stores anything, enterprise validates
 
-### Phase 5 — Collection/Batch Operations
+### Phase 5: Collection/Batch Operations
 - Batch endpoints on REST API
 - `POST /serial-numbers/allocate` with count and pool selection criteria
 - Efficient bulk state transitions
